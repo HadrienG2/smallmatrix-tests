@@ -581,7 +581,7 @@ where
     }
 }
 
-// TODO: Maybe linear solver, Gram-Schmidt, eigenvalues and eigenvectors...
+// TODO: Linear solver, Gram-Schmidt, eigenvalues and eigenvectors...
 // TODO: Special matrices (diagonal, tridiagonal, upper/lower triangular,
 //       symmetric, hermitic) and unit vectors, with specialized handling.
 
