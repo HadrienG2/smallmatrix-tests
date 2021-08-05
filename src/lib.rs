@@ -131,7 +131,7 @@ impl<const DIM: usize> One for SquareMatrix<DIM> {
 
 impl<const ROWS: usize, const COLS: usize> Matrix<ROWS, COLS> {
     /// Construction from column-major data
-    fn from_col_major_elems<T: IntoIterator<Item = Scalar>>(input: T) -> Self {
+    pub fn from_col_major_elems<T: IntoIterator<Item = Scalar>>(input: T) -> Self {
         let mut result = Self::default();
         let mut targets = result.0.iter_mut().flat_map(|col| col.iter_mut());
         let mut sources = input.into_iter();
@@ -146,17 +146,17 @@ impl<const ROWS: usize, const COLS: usize> Matrix<ROWS, COLS> {
     }
 
     /// Turn into column-major data
-    fn into_col_major_elems(self) -> impl Iterator<Item = Scalar> {
+    pub fn into_col_major_elems(self) -> impl Iterator<Item = Scalar> {
         self.0.into_iter().flat_map(|col| col.into_iter())
     }
 
     /// Iterate over inner column-major data
-    fn col_major_elems(&self) -> impl Iterator<Item = &Scalar> {
+    pub fn col_major_elems(&self) -> impl Iterator<Item = &Scalar> {
         self.0.iter().flat_map(|col| col.iter())
     }
 
     /// Iterate over inner column-major data, allowing mutation
-    fn col_major_elems_mut(&mut self) -> impl Iterator<Item = &mut Scalar> {
+    pub fn col_major_elems_mut(&mut self) -> impl Iterator<Item = &mut Scalar> {
         self.0.iter_mut().flat_map(|col| col.iter_mut())
     }
 }
