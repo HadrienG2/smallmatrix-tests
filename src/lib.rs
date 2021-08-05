@@ -1,4 +1,5 @@
-#![feature(const_generics, const_evaluatable_checked)] // Needed for hcat and vcat
+#![feature(const_generics, const_evaluatable_checked)]
+#![feature(specialization)]
 
 use core::{
     iter::Sum,
@@ -195,8 +196,9 @@ impl<const ROWS: usize> IndexMut<usize> for ColVector<ROWS> {
     }
 }
 
+// Vector slicing
 impl<const DIM: usize> ColVector<DIM> {
-    // Extract a segment of a vector
+    /// Extract a segment of a vector
     pub fn segment<const SUB_DIM: usize>(self, start_idx: usize) -> ColVector<SUB_DIM> {
         assert_le!(SUB_DIM, DIM, "Segment dimension is out of bounds");
         assert_le!(start_idx, DIM - SUB_DIM, "Start index is out of bounds");
@@ -205,18 +207,95 @@ impl<const DIM: usize> ColVector<DIM> {
         )
     }
 
-    // Extract first elements of a vector
+    /// Extract first elements of a vector
     pub fn head<const SUB_DIM: usize>(self) -> ColVector<SUB_DIM> {
         self.segment::<SUB_DIM>(0)
     }
 
-    // Extract last elements of a vector
+    /// Extract last elements of a vector
     pub fn tail<const SUB_DIM: usize>(self) -> ColVector<SUB_DIM> {
         self.segment::<SUB_DIM>(DIM - SUB_DIM)
     }
 }
 
-// TODO: Matrix slicing (block, (top|bottom)?rows, (left|right)?cols, (top|bottom)(left|right)corner)
+// Matrix slicing
+impl<const ROWS: usize, const COLS: usize> Matrix<ROWS, COLS> {
+    /// Extract a block from a matrix
+    pub fn block<const SUB_ROWS: usize, const SUB_COLS: usize>(
+        self,
+        start_row: usize,
+        start_col: usize,
+    ) -> Matrix<SUB_ROWS, SUB_COLS> {
+        assert_le!(SUB_ROWS, ROWS, "Block rows are out of bounds");
+        assert_le!(start_row, ROWS - SUB_ROWS, "Start row is out of bounds");
+        assert_le!(SUB_COLS, COLS, "Block cols are out of bounds");
+        assert_le!(start_col, COLS - SUB_COLS, "Start col is out of bounds");
+        Matrix::<SUB_ROWS, SUB_COLS>::from_iter(
+            self.into_iter()
+                .skip(start_col)
+                .take(SUB_COLS)
+                .map(|col| col.segment::<SUB_ROWS>(start_row)),
+        )
+    }
+
+    /// Extract the top-left corner of a matrix
+    pub fn top_left_corner<const SUB_ROWS: usize, const SUB_COLS: usize>(
+        self,
+    ) -> Matrix<SUB_ROWS, SUB_COLS> {
+        self.block::<SUB_ROWS, SUB_COLS>(0, 0)
+    }
+
+    /// Extract the top-right corner of a matrix
+    pub fn top_right_corner<const SUB_ROWS: usize, const SUB_COLS: usize>(
+        self,
+    ) -> Matrix<SUB_ROWS, SUB_COLS> {
+        self.block::<SUB_ROWS, SUB_COLS>(0, COLS - SUB_COLS)
+    }
+
+    /// Extract the bottom-left corner of a matrix
+    pub fn bottom_left_corner<const SUB_ROWS: usize, const SUB_COLS: usize>(
+        self,
+    ) -> Matrix<SUB_ROWS, SUB_COLS> {
+        self.block::<SUB_ROWS, SUB_COLS>(ROWS - SUB_ROWS, 0)
+    }
+
+    /// Extract the bottom-right corner of a matrix
+    pub fn bottom_right_corner<const SUB_ROWS: usize, const SUB_COLS: usize>(
+        self,
+    ) -> Matrix<SUB_ROWS, SUB_COLS> {
+        self.block::<SUB_ROWS, SUB_COLS>(ROWS - SUB_ROWS, COLS - SUB_COLS)
+    }
+
+    /// Extract a set of rows from a matrix
+    pub fn rows<const SUB_ROWS: usize>(self, start_row: usize) -> Matrix<SUB_ROWS, COLS> {
+        self.block::<SUB_ROWS, COLS>(start_row, 0)
+    }
+
+    /// Extract the top rows from a matrix
+    pub fn top_rows<const SUB_ROWS: usize>(self) -> Matrix<SUB_ROWS, COLS> {
+        self.rows::<SUB_ROWS>(0)
+    }
+
+    /// Extract the bottom rows from a matrix
+    pub fn bottom_rows<const SUB_ROWS: usize>(self) -> Matrix<SUB_ROWS, COLS> {
+        self.rows::<SUB_ROWS>(ROWS - SUB_ROWS)
+    }
+
+    /// Extract a set of columns from a matrix
+    pub fn cols<const SUB_COLS: usize>(self, start_col: usize) -> Matrix<ROWS, SUB_COLS> {
+        self.block::<ROWS, SUB_COLS>(0, start_col)
+    }
+
+    /// Extract the left columns from a matrix
+    pub fn left_cols<const SUB_COLS: usize>(self) -> Matrix<ROWS, SUB_COLS> {
+        self.cols::<SUB_COLS>(0)
+    }
+
+    /// Extract the right columns from a matrix
+    pub fn right_cols<const SUB_COLS: usize>(self) -> Matrix<ROWS, SUB_COLS> {
+        self.cols::<SUB_COLS>(COLS - SUB_COLS)
+    }
+}
 
 impl<const ROWS: usize, const COLS: usize> Matrix<ROWS, COLS> {
     /// Matrix transpose (TODO: avoid using expression templates)
@@ -349,7 +428,7 @@ impl<const DIM: usize> ColVector<DIM> {
         (self.transpose() * rhs).into()
     }
 
-    // Norm
+    /// Norm
     pub fn norm(self) -> Scalar {
         self.dot(self).sqrt()
     }
@@ -369,9 +448,137 @@ impl<const DIM: usize> SquareMatrix<DIM> {
     pub fn trace(self) -> Scalar {
         (0..DIM).map(|idx| self[(idx, idx)]).sum()
     }
+}
 
-    // TODO: Matrix determinant (needs hcat and bottom(left|right)corner)
-    // TODO: Matrix inversion (needs determinant)
+// Minor, cofactor, determinant and inverse have a dimension-dependent
+// definition. Unfortunately, in the current state of Rust const generics, this
+// requires a rather copious amount of dirty type system hackery.
+//
+// First of all, the type system must be convinced that a determinant definition
+// exists for all matrix sizes, even though that is mathematically incorrect.
+// Otherwise, it will not compile a recursive definition of NxN matrix
+// determinant, which, for N>=2, is based on the (N-1)x(N-1) determinant,
+// because it does not manage to prove that another implementation for 1x1
+// matrices is enough to terminate the recursion.
+//
+// But the actual definition must change depending on matrix size, as otherwise
+// we recurse forever until the point where N-1 underflows.
+//
+// So we need specialization, which means that we need a trait, that we shall
+// carefully hide so that the poor user does not know about it.
+#[doc(hidden)]
+trait DeterminantInverse {
+    /// Matrix determinant
+    fn det_impl(self) -> Scalar;
+
+    /// Matrix inverse
+    fn inverse_impl(self) -> Self;
+}
+//
+// The default implementation of that trait handles the 0x0 and 1x1 cases
+impl<const DIM: usize> DeterminantInverse for SquareMatrix<DIM> {
+    default fn det_impl(self) -> Scalar {
+        match DIM {
+            0 => panic!("A 0x0 matrix does not have a determinant"),
+            1 => self[(0, 0)],
+            _ => unreachable!("Should be taken over by specialization"),
+        }
+    }
+
+    default fn inverse_impl(self) -> Self {
+        match DIM {
+            0 => panic!("A 0x0 matrix does not have an inverse"),
+            1 => {
+                let inner = self[(0, 0)];
+                assert_ne!(inner, 0.0, "Matrix is not invertible");
+                Self::from_col_major_elems(core::iter::once(1.0 / inner))
+            }
+            _ => unreachable!("Should be taken over by specialization"),
+        }
+    }
+}
+//
+// Then we introduce a dirty trick to only implement methods when a const
+// generic parameter matches a certain predicate...
+pub struct ConstCheck<const CHECK: bool>;
+pub trait True {}
+impl True for ConstCheck<true> {}
+//
+// ...and we use that to implement matrix minors and cofactors on the matrices
+// where it makes sense, that is to say, square matrices larger than 2x2.
+impl<const DIM: usize> SquareMatrix<DIM>
+where
+    [(); DIM - 1]: ,
+    ConstCheck<{ DIM >= 2 }>: True,
+{
+    /// Matrix element minor
+    pub fn minor(self, row: usize, col: usize) -> Scalar {
+        SquareMatrix::<{ DIM - 1 }>::from_iter(
+            self.into_iter()
+                .take(col)
+                .chain(self.into_iter().skip(col + 1))
+                .map(|col| {
+                    ColVector::<{ DIM - 1 }>::from_col_major_elems(
+                        col.into_col_major_elems()
+                            .take(row)
+                            .chain(col.into_col_major_elems().skip(row + 1)),
+                    )
+                }),
+        )
+        .det_impl()
+    }
+
+    /// Matrix element cofactor
+    pub fn cofactor(self, row: usize, col: usize) -> Scalar {
+        (-1.0f64).powi((row + col) as _) * self.minor(row, col)
+    }
+}
+//
+// Using minors and cofactors, we can then implement a "specialized" determinant
+// for matrix sizes above 2 that uses Laplace expansion.
+impl<const DIM: usize> DeterminantInverse for SquareMatrix<DIM>
+where
+    [(); DIM - 1]: ,
+    ConstCheck<{ DIM >= 2 }>: True,
+{
+    // Matrix determinant computation based on Laplace expansion
+    // TODO: Switch to something like LU decomposition when DIM becomes high
+    fn det_impl(self) -> Scalar {
+        let left_col = self.left_cols::<1>();
+        left_col
+            .into_col_major_elems()
+            .enumerate()
+            .map(|(row, elem)| elem * self.cofactor(row, 0))
+            .sum()
+    }
+
+    /// Matrix inverse computation based on Cramer's rule
+    // TODO: Switch to something like LU decomposition when DIM becomes high
+    fn inverse_impl(self) -> Self {
+        let det = self.det_impl();
+        assert_ne!(det, 0.0, "Matrix is not invertible");
+        let cofactor_matrix = Self::from_col_major_elems(
+            (0..DIM * DIM).map(|idx| self.cofactor(idx % DIM, idx / DIM)),
+        );
+        cofactor_matrix.transpose() / det
+    }
+}
+//
+// And finally, we expose an inherent determinant method for matrices of size
+// above 1x1, which is the correct thing to do.
+impl<const DIM: usize> SquareMatrix<DIM>
+where
+    ConstCheck<{ DIM >= 1 }>: True,
+{
+    /// Matrix determinant
+    pub fn det(self) -> Scalar {
+        self.det_impl()
+    }
+
+    /// Matrix inverse
+    pub fn inverse(self) -> Self {
+        self.inverse_impl()
+    }
 }
 
 // TODO: Maybe linear solver, Gram-Schmidt, eigenvalues and eigenvectors...
