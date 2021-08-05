@@ -2,7 +2,7 @@
 #![feature(specialization)]
 
 use core::{
-    iter::Sum,
+    iter::{Product, Sum},
     ops::{Add, AddAssign, Div, DivAssign, Index, IndexMut, Mul, MulAssign, Neg, Sub, SubAssign},
 };
 use genawaiter::yield_;
@@ -14,7 +14,8 @@ use rand::{
     Fill, Rng,
 };
 
-// TODO: Add a layer of genericity over scalar type later on
+// TODO: Add a layer of genericity over scalar type later on, and bring some
+//       bidirectional From impls along the way
 pub type Scalar = f64;
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -177,6 +178,7 @@ impl<const ROWS: usize, const COLS: usize> FromIterator<ColVector<ROWS>> for Mat
     }
 }
 
+/// Iterator over the columns of a matrix
 pub struct ColIter<const ROWS: usize, const COLS: usize>(
     core::array::IntoIter<[Scalar; ROWS], COLS>,
 );
@@ -232,6 +234,8 @@ impl<const LEFT_ROWS: usize, const LEFT_COLS: usize> Matrix<LEFT_ROWS, LEFT_COLS
         )
     }
 }
+
+// TODO: Implement Display, LowerExp, UpperExp, and a matching custom Debug impl
 
 // Element access
 impl<const ROWS: usize, const COLS: usize> Index<(usize, usize)> for Matrix<ROWS, COLS> {
@@ -372,8 +376,9 @@ impl<const ROWS: usize, const COLS: usize> Matrix<ROWS, COLS> {
 }
 
 impl<const ROWS: usize, const COLS: usize> Matrix<ROWS, COLS> {
-    /// Matrix transpose (TODO: avoid using expression templates)
+    /// Matrix transpose
     pub fn transpose(self) -> Matrix<COLS, ROWS> {
+        // TODO: Avoid eager computation, use expression templates instead
         Matrix::<COLS, ROWS>::from_col_major_elems(
             (0..ROWS * COLS)
                 .map(|idx| (idx / COLS, idx % COLS))
@@ -450,7 +455,7 @@ impl<const ROWS: usize, const COLS: usize> AddAssign for Matrix<ROWS, COLS> {
 
 impl<const ROWS: usize, const COLS: usize> Sum for Matrix<ROWS, COLS> {
     fn sum<I: Iterator<Item = Self>>(iter: I) -> Self {
-        iter.fold(Self::default(), |acc, x| acc + x)
+        iter.fold(Self::zero(), |acc, x| acc + x)
     }
 }
 
@@ -496,6 +501,12 @@ impl<const ROWS: usize, const COLS: usize> MulAssign<SquareMatrix<COLS>> for Mat
     }
 }
 
+impl<const DIM: usize> Product for SquareMatrix<DIM> {
+    fn product<I: Iterator<Item = Self>>(iter: I) -> Self {
+        iter.fold(Self::one(), |acc, x| acc * x)
+    }
+}
+
 impl<RHS: Into<usize>, const DIM: usize> Pow<RHS> for SquareMatrix<DIM> {
     type Output = Self;
     fn pow(self, rhs: RHS) -> Self {
@@ -504,19 +515,19 @@ impl<RHS: Into<usize>, const DIM: usize> Pow<RHS> for SquareMatrix<DIM> {
 }
 
 impl<const DIM: usize> ColVector<DIM> {
-    /// Dot product
+    /// Vector dot product
     pub fn dot(self, rhs: Self) -> Scalar {
         (self.transpose() * rhs).into()
     }
 
-    /// Norm
+    /// Vector norm
     pub fn norm(self) -> Scalar {
         self.dot(self).sqrt()
     }
 }
 
 impl ColVector<3> {
-    /// Cross product
+    /// 3D vector cross product
     pub fn cross(self, rhs: Self) -> Self {
         Self::from_col_major_elems((X..=Z).map(|idx| {
             self[(idx + 1) % 3] * rhs[(idx + 2) % 3] - self[(idx + 2) % 3] * rhs[(idx + 1) % 3]
@@ -580,7 +591,10 @@ impl<const DIM: usize> DeterminantInverse for SquareMatrix<DIM> {
 //
 // Then we introduce a dirty trick to only implement methods when a const
 // generic parameter matches a certain predicate...
+//
+/// Hackish emulation of trait bounds for const parameters
 pub struct ConstCheck<const CHECK: bool>;
+/// Trait implemented by ConstCheck when its argument is true
 pub trait True {}
 impl True for ConstCheck<true> {}
 //
@@ -1094,6 +1108,8 @@ mod tests {
     use super::*;
     use quickcheck::TestResult;
     use quickcheck_macros::quickcheck;
+
+    // TODO: Add lots of tests
 
     /* // Test division with upwards rounding
     #[quickcheck]
