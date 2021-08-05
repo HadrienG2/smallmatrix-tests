@@ -15,8 +15,7 @@ num-traits = "*"
 paste = "*"
 quickcheck = "*"
 quickcheck_macros = "*"
-rand = "*"
-rand_xoshiro = "*"
+rand = { version = "*", features = [ "min_const_gen" ] }
 rayon = "*"
 core_simd = { path = "../stdsimd/crates/core_simd" }
 

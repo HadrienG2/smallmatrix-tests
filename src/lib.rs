@@ -5,7 +5,14 @@ use core::{
     iter::Sum,
     ops::{Add, AddAssign, Div, DivAssign, Index, IndexMut, Mul, MulAssign, Neg, Sub, SubAssign},
 };
+use genawaiter::yield_;
 use more_asserts::*;
+use num_traits::{One, Pow, Zero};
+use quickcheck::Arbitrary;
+use rand::{
+    distributions::{Distribution, Standard},
+    Fill, Rng,
+};
 
 // TODO: Add a layer of genericity over scalar type later on
 pub type Scalar = f64;
@@ -24,6 +31,19 @@ pub const X: usize = 0;
 pub const Y: usize = 1;
 pub const Z: usize = 2;
 
+// 1x1 matrices are kinda sorta like scalars
+impl From<Scalar> for Matrix<1, 1> {
+    fn from(x: Scalar) -> Self {
+        Self([[x]])
+    }
+}
+
+impl From<Matrix<1, 1>> for Scalar {
+    fn from(x: Matrix<1, 1>) -> Self {
+        x.0[0][0]
+    }
+}
+
 // NOTE: Can't derive Default as it isn't implemented for all arrays
 impl<const ROWS: usize, const COLS: usize> Default for Matrix<ROWS, COLS> {
     fn default() -> Self {
@@ -31,7 +51,82 @@ impl<const ROWS: usize, const COLS: usize> Default for Matrix<ROWS, COLS> {
     }
 }
 
-// TODO: Implement useful num_traits (at least Zero), rand, and quickcheck's Arbitrary
+impl<const ROWS: usize, const COLS: usize> Zero for Matrix<ROWS, COLS> {
+    fn zero() -> Self {
+        Self([[Scalar::zero(); ROWS]; COLS])
+    }
+
+    fn is_zero(&self) -> bool {
+        self.col_major_elems().all(Scalar::is_zero)
+    }
+}
+
+// Random matrix generation
+impl<const ROWS: usize, const COLS: usize> Fill for Matrix<ROWS, COLS> {
+    fn try_fill<R: Rng + ?Sized>(&mut self, rng: &mut R) -> Result<(), rand::Error> {
+        for col in self.0.iter_mut() {
+            col.try_fill(rng)?;
+        }
+        Ok(())
+    }
+}
+
+impl<const ROWS: usize, const COLS: usize> Distribution<Matrix<ROWS, COLS>> for Standard
+where
+    [(); ROWS * COLS]: ,
+{
+    fn sample<R: Rng + ?Sized>(&self, rng: &mut R) -> Matrix<ROWS, COLS> {
+        Matrix::<ROWS, COLS>::from_col_major_elems(rng.gen::<[Scalar; ROWS * COLS]>().into_iter())
+    }
+}
+
+impl<const ROWS: usize, const COLS: usize> Arbitrary for Matrix<ROWS, COLS> {
+    fn arbitrary(g: &mut quickcheck::Gen) -> Self {
+        Self::from_col_major_elems((0..ROWS * COLS).map(|_| f64::arbitrary(g)))
+    }
+
+    fn shrink(&self) -> Box<dyn Iterator<Item = Self>> {
+        let seed = self.clone();
+        Box::new(
+            genawaiter::rc::gen!({
+                for (elem_idx, old_elem) in seed.into_col_major_elems().enumerate() {
+                    for new_elem in old_elem.shrink() {
+                        yield_!(Self::from_col_major_elems(
+                            seed.into_col_major_elems()
+                                .take(elem_idx)
+                                .chain(core::iter::once(new_elem))
+                                .chain(seed.into_col_major_elems().skip(elem_idx + 1))
+                        ));
+                    }
+                }
+            })
+            .into_iter(),
+        )
+    }
+}
+
+impl<const DIM: usize> ColVector<DIM> {
+    /// Unit vector
+    pub fn unit(idx: usize) -> Self {
+        assert_lt!(idx, DIM, "Requested coordinate is out of bounds");
+        Self::from_col_major_elems((0..DIM).map(|idx2| (idx2 == idx) as u8 as _))
+    }
+}
+
+impl<const DIM: usize> SquareMatrix<DIM> {
+    /// Identity matrix
+    pub fn identity() -> Self {
+        Self::from_iter((0..DIM).map(|col| ColVector::<DIM>::unit(col)))
+    }
+}
+
+impl<const DIM: usize> One for SquareMatrix<DIM> {
+    fn one() -> Self {
+        Self::identity()
+    }
+}
+
+// TODO: Projection and rotation matrices
 
 impl<const ROWS: usize, const COLS: usize> Matrix<ROWS, COLS> {
     /// Construction from column-major data
@@ -55,7 +150,6 @@ impl<const ROWS: usize, const COLS: usize> Matrix<ROWS, COLS> {
     }
 
     /// Iterate over inner column-major data
-    #[allow(unused)]
     fn col_major_elems(&self) -> impl Iterator<Item = &Scalar> {
         self.0.iter().flat_map(|col| col.iter())
     }
@@ -99,36 +193,6 @@ impl<const ROWS: usize, const COLS: usize> IntoIterator for Matrix<ROWS, COLS> {
     type IntoIter = ColIter<ROWS, COLS>;
     fn into_iter(self) -> Self::IntoIter {
         ColIter(self.0.into_iter())
-    }
-}
-
-impl<const DIM: usize> ColVector<DIM> {
-    /// Unit vector
-    pub fn unit(idx: usize) -> Self {
-        assert_lt!(idx, DIM, "Requested coordinate is out of bounds");
-        Self::from_col_major_elems((0..DIM).map(|idx2| (idx2 == idx) as u8 as _))
-    }
-}
-
-impl<const DIM: usize> SquareMatrix<DIM> {
-    /// Identity matrix
-    pub fn identity() -> Self {
-        Self::from_iter((0..DIM).map(|col| ColVector::<DIM>::unit(col)))
-    }
-}
-
-// TODO: Projection and rotation matrices
-
-// 1x1 matrices are kinda sorta like scalars
-impl From<Scalar> for Matrix<1, 1> {
-    fn from(x: Scalar) -> Self {
-        Self([[x]])
-    }
-}
-
-impl From<Matrix<1, 1>> for Scalar {
-    fn from(x: Matrix<1, 1>) -> Self {
-        x.0[0][0]
     }
 }
 
@@ -271,6 +335,11 @@ impl<const ROWS: usize, const COLS: usize> Matrix<ROWS, COLS> {
         self.block::<SUB_ROWS, COLS>(start_row, 0)
     }
 
+    /// Extract the N-th row of a matrix
+    pub fn row(self, row: usize) -> RowVector<COLS> {
+        self.rows::<1>(row)
+    }
+
     /// Extract the top rows from a matrix
     pub fn top_rows<const SUB_ROWS: usize>(self) -> Matrix<SUB_ROWS, COLS> {
         self.rows::<SUB_ROWS>(0)
@@ -284,6 +353,11 @@ impl<const ROWS: usize, const COLS: usize> Matrix<ROWS, COLS> {
     /// Extract a set of columns from a matrix
     pub fn cols<const SUB_COLS: usize>(self, start_col: usize) -> Matrix<ROWS, SUB_COLS> {
         self.block::<ROWS, SUB_COLS>(0, start_col)
+    }
+
+    /// Extract the N-th column of a matrix
+    pub fn col(self, col: usize) -> ColVector<ROWS> {
+        self.cols::<1>(col)
     }
 
     /// Extract the left columns from a matrix
@@ -422,6 +496,13 @@ impl<const ROWS: usize, const COLS: usize> MulAssign<SquareMatrix<COLS>> for Mat
     }
 }
 
+impl<RHS: Into<usize>, const DIM: usize> Pow<RHS> for SquareMatrix<DIM> {
+    type Output = Self;
+    fn pow(self, rhs: RHS) -> Self {
+        num_traits::pow::pow(self, rhs.into())
+    }
+}
+
 impl<const DIM: usize> ColVector<DIM> {
     /// Dot product
     pub fn dot(self, rhs: Self) -> Scalar {
@@ -455,17 +536,16 @@ impl<const DIM: usize> SquareMatrix<DIM> {
 // requires a rather copious amount of dirty type system hackery.
 //
 // First of all, the type system must be convinced that a determinant definition
-// exists for all matrix sizes, even though that is mathematically incorrect.
-// Otherwise, it will not compile a recursive definition of NxN matrix
-// determinant, which, for N>=2, is based on the (N-1)x(N-1) determinant,
-// because it does not manage to prove that another implementation for 1x1
-// matrices is enough to terminate the recursion.
+// exists for all matrix sizes. Otherwise, it will not compile a recursive
+// definition of NxN matrix determinant, which, for N>=2, is based on the
+// (N-1)x(N-1) determinant, because it does not manage to prove that another
+// implementation for 1x1 matrices is enough to terminate the recursion.
 //
 // But the actual definition must change depending on matrix size, as otherwise
 // we recurse forever until the point where N-1 underflows.
 //
 // So we need specialization, which means that we need a trait, that we shall
-// carefully hide so that the poor user does not know about it.
+// carefully hide so that the poor user does not need to know about it.
 #[doc(hidden)]
 trait DeterminantInverse {
     /// Matrix determinant
@@ -479,7 +559,7 @@ trait DeterminantInverse {
 impl<const DIM: usize> DeterminantInverse for SquareMatrix<DIM> {
     default fn det_impl(self) -> Scalar {
         match DIM {
-            0 => panic!("A 0x0 matrix does not have a determinant"),
+            0 => 0.0,
             1 => self[(0, 0)],
             _ => unreachable!("Should be taken over by specialization"),
         }
@@ -487,7 +567,7 @@ impl<const DIM: usize> DeterminantInverse for SquareMatrix<DIM> {
 
     default fn inverse_impl(self) -> Self {
         match DIM {
-            0 => panic!("A 0x0 matrix does not have an inverse"),
+            0 => self,
             1 => {
                 let inner = self[(0, 0)];
                 assert_ne!(inner, 0.0, "Matrix is not invertible");
@@ -505,7 +585,7 @@ pub trait True {}
 impl True for ConstCheck<true> {}
 //
 // ...and we use that to implement matrix minors and cofactors on the matrices
-// where it makes sense, that is to say, square matrices larger than 2x2.
+// where it makes sense, that is to say, for square matrices larger than 2x2.
 impl<const DIM: usize> SquareMatrix<DIM>
 where
     [(); DIM - 1]: ,
@@ -513,6 +593,8 @@ where
 {
     /// Matrix element minor
     pub fn minor(self, row: usize, col: usize) -> Scalar {
+        assert_le!(row, DIM, "Row is out of bounds");
+        assert_le!(col, DIM, "Column is out of bounds");
         SquareMatrix::<{ DIM - 1 }>::from_iter(
             self.into_iter()
                 .take(col)
@@ -565,11 +647,8 @@ where
 }
 //
 // And finally, we expose an inherent determinant method for matrices of size
-// above 1x1, which is the correct thing to do.
-impl<const DIM: usize> SquareMatrix<DIM>
-where
-    ConstCheck<{ DIM >= 1 }>: True,
-{
+// above 1x1, so that users need not mess with our weird trait.
+impl<const DIM: usize> SquareMatrix<DIM> {
     /// Matrix determinant
     pub fn det(self) -> Scalar {
         self.det_impl()
@@ -592,7 +671,7 @@ pub type Mask<const LANES: usize> = Mask64<LANES>;
 const fn simd_lanes(simd_bits: usize) -> usize {
     // assert_eq!(simd_bits % 8, 0);
     let simd_bytes = simd_bits / 8;
-    let scalar_bytes = std::mem::size_of::<Scalar>();
+    let scalar_bytes = core::mem::size_of::<Scalar>();
     // assert_gt!(simd_bytes, scalar_bytes);
     simd_bytes / scalar_bytes
 }
@@ -643,7 +722,7 @@ pub fn scalarize<const LANES: usize>(slice: &[Simd<LANES>]) -> &[Scalar]
 where
     LaneCount<LANES>: SupportedLaneCount,
 {
-    unsafe { std::slice::from_raw_parts(slice.as_ptr() as *const Scalar, LANES * slice.len()) }
+    unsafe { core::slice::from_raw_parts(slice.as_ptr() as *const Scalar, LANES * slice.len()) }
 }
 
 pub fn scalarize_mut<const LANES: usize>(slice: &mut [Simd<LANES>]) -> &mut [Scalar]
@@ -651,7 +730,7 @@ where
     LaneCount<LANES>: SupportedLaneCount,
 {
     unsafe {
-        std::slice::from_raw_parts_mut(slice.as_mut_ptr() as *mut Scalar, LANES * slice.len())
+        core::slice::from_raw_parts_mut(slice.as_mut_ptr() as *mut Scalar, LANES * slice.len())
     }
 }
 
