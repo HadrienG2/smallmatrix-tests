@@ -684,14 +684,53 @@ mod tests {
     use paste::paste;
     use quickcheck::TestResult;
     use quickcheck_macros::quickcheck;
+    use std::panic::UnwindSafe;
+
+    fn panics<F: FnOnce() -> R + UnwindSafe, R>(f: F) -> bool {
+        std::panic::catch_unwind(f).is_err()
+    }
+
+    fn assert_close(expected: Scalar, result: Scalar) {
+        if expected.is_nan() {
+            assert_eq!(result.to_bits(), expected.to_bits());
+        } else if expected.is_infinite() {
+            assert_eq!(result, expected);
+        } else {
+            assert_le!((result - expected).abs(), Scalar::EPSILON * expected.abs());
+        }
+    }
+
+    #[quickcheck]
+    fn cross(lhs: Vector<3>, rhs: Vector<3>) {
+        let expected = Vector::<3>::from_col_major_elems(
+            [
+                lhs[Y] * rhs[Z] - lhs[Z] * rhs[Y],
+                lhs[Z] * rhs[X] - lhs[X] * rhs[Z],
+                lhs[X] * rhs[Y] - lhs[Y] * rhs[X],
+            ]
+            .into_iter(),
+        );
+        // Assert that the output has the right dimension
+        let result: Vector<3> = lhs.cross(rhs);
+        for (expected, result) in expected
+            .into_col_major_elems()
+            .zip(result.into_col_major_elems())
+        {
+            assert_close(expected, result);
+        }
+    }
 
     macro_rules! generate_tests {
-        () => { generate_tests!(1, 2, 3, 4, 5, 6, 7, 8); };
+        () => {
+            // FIXME: Had to disable some test configurations to keep compile times reasonable.
+            //        Do a measureme run to make sure we understand what's going on.
+            generate_tests!(1, 2, 3, /*4, 5, 6, 7, */ 8);
+        };
         ($($dim:literal),*) => {
             $(
                 paste! {
                     #[test]
-                    fn [< unit_ $dim _in_range >]() {
+                    fn [< unit $dim _in_range >]() {
                         for idx in 0..$dim {
                             let unit = Vector::<$dim>::unit(idx);
                             for (idx2, elem) in unit.into_col_major_elems().enumerate() {
@@ -701,17 +740,16 @@ mod tests {
                     }
 
                     #[quickcheck]
-                    #[should_panic]
-                    fn [< unit_ $dim _out_of_range >](idx: usize) -> TestResult {
+                    fn [< unit $dim _out_of_range >](idx: usize) -> TestResult {
                         if idx < $dim {
                             return TestResult::discard();
                         }
-                        Vector::<$dim>::unit(idx);
-                        TestResult::failed()
+                        TestResult::from_bool(panics(|| Vector::<$dim>::unit(idx)))
+
                     }
 
                     #[test]
-                    fn [< identity_ $dim >]() {
+                    fn [< identity $dim >]() {
                         let identity = SquareMatrix::<$dim>::identity();
                         for (col, col_vec) in identity.into_iter().enumerate() {
                             for (row, elem) in col_vec.into_col_major_elems().enumerate() {
@@ -720,97 +758,210 @@ mod tests {
                         }
                     }
 
+                    #[quickcheck]
+                    fn [< dot $dim >](lhs: Vector<$dim>, rhs: Vector<$dim>) {
+                        let result = lhs.dot(rhs);
+                        let expected =
+                            lhs.into_col_major_elems()
+                               .zip(rhs.into_col_major_elems())
+                               .map(|(x, y)| x * y)
+                               .sum::<Scalar>();
+                        assert_close(expected, result);
+                    }
+
+                    #[quickcheck]
+                    fn [< norm $dim >](vec: Vector<$dim>) {
+                        let result = vec.norm();
+                        let expected = vec.dot(vec).sqrt();
+                        assert_close(expected, result);
+                    }
+
+                    #[quickcheck]
+                    fn [< trace $dim >](mat: SquareMatrix<$dim>) {
+                        let expected = (0..$dim).map(|idx| mat[(idx, idx)]).sum::<Scalar>();
+                        let result = mat.trace();
+                        assert_close(expected, result);
+                    }
                 }
 
-                generate_tests!(($dim, 1), ($dim, 2), ($dim, 3), ($dim, 4), ($dim, 5), ($dim, 6), ($dim, 7), ($dim, 8));
+                // FIXME: Had to disable some test configurations to keep compile times reasonable.
+                //        Do a measureme run to make sure we understand what's going on.
+                generate_tests!(
+                    ($dim, 1),
+                    ($dim, 2),
+                    ($dim, 3),
+                    // ($dim, 4),
+                    // ($dim, 5),
+                    // ($dim, 6),
+                    // ($dim, 7),
+                    ($dim, 8)
+                );
             )*
         };
         ($(($dim1:literal, $dim2:literal)),*) => {
             $(
                 paste! {
                     #[quickcheck]
-                    fn [< from_col_major_elems_ $dim1 x $dim2 _right_amount >](elems: Vec<Scalar>) -> TestResult {
-                        if elems.len() != $dim1 * $dim2 {
-                            return TestResult::discard();
-                        }
-                        let matrix = Matrix::<$dim1, $dim2>::from_col_major_elems(elems.iter().copied());
-                        for (src, dest) in elems.into_iter().zip(matrix.into_col_major_elems()) {
-                            assert_eq!(src.to_bits(), dest.to_bits());
-                        }
-                        TestResult::passed()
-                    }
-
-                    #[quickcheck]
-                    #[should_panic]
-                    fn [< from_col_major_elems_ $dim1 x $dim2 _wrong_amount >](elems: Vec<Scalar>) -> TestResult {
+                    fn [< from_col_major_elems_ $dim1 x $dim2 >](elems: Vec<Scalar>) -> TestResult {
                         if elems.len() == $dim1 * $dim2 {
-                            return TestResult::discard();
+                            let matrix = Matrix::<$dim1, $dim2>::from_col_major_elems(elems.iter().copied());
+                            for (src, dest) in elems.into_iter().zip(matrix.into_col_major_elems()) {
+                                assert_eq!(src.to_bits(), dest.to_bits());
+                            }
+                            TestResult::passed()
+                        } else {
+                            TestResult::from_bool(panics(|| Matrix::<$dim1, $dim2>::from_col_major_elems(elems.into_iter())))
                         }
-                        Matrix::<$dim1, $dim2>::from_col_major_elems(elems.into_iter());
-                        TestResult::failed()
                     }
 
                     #[quickcheck]
-                    fn [< into_col_major_elems_ $dim1 x $dim2 >](matrix: Matrix<$dim1, $dim2>) -> bool {
+                    fn [< into_col_major_elems_ $dim1 x $dim2 >](matrix: Matrix<$dim1, $dim2>) {
                         assert_eq!(matrix.into_col_major_elems().count(), $dim1 * $dim2);
                         for (idx, dest) in matrix.into_col_major_elems().enumerate() {
                             let (col, row) = (idx / $dim1, idx % $dim1);
                             let src = matrix[(row, col)];
                             assert_eq!(src.to_bits(), dest.to_bits());
                         }
-                        true
                     }
 
                     #[quickcheck]
-                    fn [< col_major_elems_ $dim1 x $dim2 >](matrix: Matrix<$dim1, $dim2>) -> bool {
+                    fn [< col_major_elems_ $dim1 x $dim2 >](matrix: Matrix<$dim1, $dim2>) {
                         assert_eq!(matrix.col_major_elems().count(), $dim1 * $dim2);
                         for (idx, dest_ref) in matrix.col_major_elems().enumerate() {
                             let (col, row) = (idx / $dim1, idx % $dim1);
                             assert_eq!(&matrix[(row, col)] as *const Scalar, dest_ref as *const Scalar);
                         }
-                        true
                     }
 
                     #[quickcheck]
-                    fn [< col_major_elems_mut_ $dim1 x $dim2 >](mut matrix: Matrix<$dim1, $dim2>) -> bool {
+                    fn [< col_major_elems_mut_ $dim1 x $dim2 >](mut matrix: Matrix<$dim1, $dim2>) {
                         assert_eq!(matrix.col_major_elems_mut().count(), $dim1 * $dim2);
                         let ptrs = matrix.col_major_elems_mut().map(|refmut| refmut as *mut Scalar).collect::<Vec<_>>();
                         for (idx, ptr) in ptrs.into_iter().enumerate() {
                             let (col, row) = (idx / $dim1, idx % $dim1);
                             assert_eq!(&mut matrix[(row, col)] as *mut Scalar, ptr);
                         }
-                        true
                     }
 
                     #[quickcheck]
-                    fn [< cat_ $dim1 _ $dim2 >](lhs: Vector<$dim1>, rhs: Vector<$dim2>) -> bool {
+                    fn [< cat_vec $dim1 _vec $dim2 >](lhs: Vector<$dim1>, rhs: Vector<$dim2>) {
                         // Assert that the output has the right dimension
                         let out: Vector<{ $dim1 + $dim2 }> = lhs.cat(rhs);
                         for (src, dest) in lhs.into_col_major_elems().chain(rhs.into_col_major_elems()).zip(out.into_col_major_elems()) {
                             assert_eq!(src.to_bits(), dest.to_bits());
                         }
-                        true
+                    }
+
+                    // Signature of op asserts that output vector has the right dimension at compile time
+                    fn [< test_segment $dim1 _of_vec $dim2 >](
+                        vec: Vector<$dim2>,
+                        idx: usize,
+                        op: impl FnOnce() -> Vector<$dim1> + UnwindSafe
+                    ) -> bool {
+                        if $dim1 <= ($dim2 as usize).saturating_sub(idx) {
+                            for (src, dest) in vec.into_col_major_elems().skip(idx).zip(op().into_col_major_elems()) {
+                                assert_eq!(src.to_bits(), dest.to_bits());
+                            }
+                            true
+                        } else {
+                            panics(op)
+                        }
+                    }
+
+                    #[quickcheck]
+                    fn [< segment $dim1 _of_vec $dim2 >](vec: Vector<$dim2>, idx: usize) -> bool {
+                        [< test_segment $dim1 _of_vec $dim2 >](
+                            vec,
+                            idx,
+                            || vec.segment::<$dim1>(idx)
+                        )
+                    }
+
+                    #[quickcheck]
+                    fn [< head $dim1 _of_vec $dim2 >](vec: Vector<$dim2>) -> bool {
+                        [< test_segment $dim1 _of_vec $dim2 >](
+                            vec,
+                            0,
+                            || vec.head::<$dim1>()
+                        )
+                    }
+
+                    #[quickcheck]
+                    fn [< tail $dim1 _of_vec $dim2 >](vec: Vector<$dim2>) -> bool {
+                        [< test_segment $dim1 _of_vec $dim2 >](
+                            vec,
+                            ($dim2 as usize).saturating_sub(($dim1 as usize)),
+                            || vec.tail::<$dim1>()
+                        )
+                    }
+
+                    #[quickcheck]
+                    fn [< row $dim1 x $dim2 >](
+                        mat: Matrix<$dim1, $dim2>,
+                        row: usize
+                    ) -> bool {
+                        [< test_rows1_of_mat $dim1 x $dim2 >](
+                            mat,
+                            row,
+                            || mat.row(row)
+                        )
+                    }
+
+                    #[quickcheck]
+                    fn [< col $dim1 x $dim2 >](
+                        mat: Matrix<$dim1, $dim2>,
+                        col: usize
+                    ) -> bool {
+                        [< test_cols1_of_mat $dim1 x $dim2 >](
+                            mat,
+                            col,
+                            || mat.col(col)
+                        )
+                    }
+
+                    #[quickcheck]
+                    fn [< transpose $dim1 x $dim2 >](mat: Matrix<$dim1, $dim2>) {
+                        // Assert that the output has the right dimension
+                        let tr: Matrix<$dim2, $dim1> = mat.transpose();
+                        for src_row in 0..$dim1 {
+                            for src_col in 0..$dim2 {
+                                assert_eq!(
+                                    mat[(src_row, src_col)].to_bits(),
+                                    tr[(src_col, src_row)].to_bits()
+                                );
+                            }
+                        }
                     }
                 }
 
-                generate_tests!(($dim1, $dim2, 1), ($dim1, $dim2, 2), ($dim1, $dim2, 3), ($dim1, $dim2, 4), ($dim1, $dim2, 5), ($dim1, $dim2, 6), ($dim1, $dim2, 7), ($dim1, $dim2, 8));
+                // FIXME: Had to disable some test configurations to keep compile times reasonable.
+                //        Do a measureme run to make sure we understand what's going on.
+                generate_tests!(
+                    ($dim1, $dim2, 1),
+                    ($dim1, $dim2, 2),
+                    ($dim1, $dim2, 3),
+                    // ($dim1, $dim2, 4),
+                    // ($dim1, $dim2, 5),
+                    // ($dim1, $dim2, 6),
+                    // ($dim1, $dim2, 7),
+                    ($dim1, $dim2, 8)
+                );
             )*
         };
         ($(($dim1:literal, $dim2:literal, $dim3:literal)),*) => {
             $(
                 paste! {
                     #[quickcheck]
-                    fn [< hcat_ $dim1 x $dim2 _ $dim1 x $dim3 >](lhs: Matrix<$dim1, $dim2>, rhs: Matrix<$dim1, $dim3>) -> bool {
+                    fn [< hcat_ $dim1 x $dim2 _ $dim1 x $dim3 >](lhs: Matrix<$dim1, $dim2>, rhs: Matrix<$dim1, $dim3>) {
                         // Assert that the output has the right dimension
                         let out: Matrix<$dim1, { $dim2 + $dim3 }> = lhs.hcat(rhs);
                         for (src, dest) in lhs.into_col_major_elems().chain(rhs.into_col_major_elems()).zip(out.into_col_major_elems()) {
                             assert_eq!(src.to_bits(), dest.to_bits());
                         }
-                        true
                     }
 
                     #[quickcheck]
-                    fn [< vcat_ $dim1 x $dim2 _ $dim3 x $dim2 >](lhs: Matrix<$dim1, $dim2>, rhs: Matrix<$dim3, $dim2>) -> bool {
+                    fn [< vcat_ $dim1 x $dim2 _ $dim3 x $dim2 >](lhs: Matrix<$dim1, $dim2>, rhs: Matrix<$dim3, $dim2>) {
                         // Assert that the output has the right dimension
                         let out: Matrix<{ $dim1 + $dim3 }, $dim2> = lhs.vcat(rhs);
                         for ((col_lhs, col_rhs), col_dest) in lhs.into_iter().zip(rhs.into_iter()).zip(out.into_iter()) {
@@ -819,7 +970,195 @@ mod tests {
                                 assert_eq!(src.to_bits(), dest.to_bits());
                             }
                         }
-                        true
+                    }
+
+                    // Signature of op asserts that output matrix has the right dimension at compile time
+                    fn [< test_rows $dim1 _of_mat $dim2 x $dim3 >](
+                        mat: Matrix<$dim2, $dim3>,
+                        start_row: usize,
+                        op: impl FnOnce() -> Matrix<$dim1, $dim3> + UnwindSafe
+                    ) -> bool {
+                        [< test_block $dim1 x $dim3 _of_mat $dim2 x $dim3 >](mat, start_row, 0, op)
+                    }
+
+                    #[quickcheck]
+                    fn [< rows $dim1 _of_mat $dim2 x $dim3 >](
+                        mat: Matrix<$dim2, $dim3>,
+                        start_row: usize
+                    ) -> bool {
+                        [< test_rows $dim1 _of_mat $dim2 x $dim3 >](
+                            mat,
+                            start_row,
+                            || mat.rows::<$dim1>(start_row)
+                        )
+                    }
+
+                    #[quickcheck]
+                    fn [< top $dim1 _of_mat $dim2 x $dim3 >](
+                        mat: Matrix<$dim2, $dim3>,
+                    ) -> bool {
+                        [< test_rows $dim1 _of_mat $dim2 x $dim3 >](
+                            mat,
+                            0,
+                            || mat.top_rows::<$dim1>()
+                        )
+                    }
+
+                    #[quickcheck]
+                    fn [< bottom $dim1 _of_mat $dim2 x $dim3 >](
+                        mat: Matrix<$dim2, $dim3>,
+                    ) -> bool {
+                        [< test_rows $dim1 _of_mat $dim2 x $dim3 >](
+                            mat,
+                            ($dim2 as usize).saturating_sub($dim1),
+                            || mat.bottom_rows::<$dim1>()
+                        )
+                    }
+
+                    // Signature of op asserts that output matrix has the right dimension at compile time
+                    fn [< test_cols $dim1 _of_mat $dim2 x $dim3 >](
+                        mat: Matrix<$dim2, $dim3>,
+                        start_col: usize,
+                        op: impl FnOnce() -> Matrix<$dim2, $dim1> + UnwindSafe
+                    ) -> bool {
+                        [< test_block $dim2 x $dim1 _of_mat $dim2 x $dim3 >](mat, 0, start_col, op)
+                    }
+
+                    #[quickcheck]
+                    fn [< cols $dim1 _of_mat $dim2 x $dim3 >](
+                        mat: Matrix<$dim2, $dim3>,
+                        start_col: usize
+                    ) -> bool {
+                        [< test_cols $dim1 _of_mat $dim2 x $dim3 >](
+                            mat,
+                            start_col,
+                            || mat.cols::<$dim1>(start_col)
+                        )
+                    }
+
+                    #[quickcheck]
+                    fn [< left $dim1 _of_mat $dim2 x $dim3 >](
+                        mat: Matrix<$dim2, $dim3>,
+                    ) -> bool {
+                        [< test_cols $dim1 _of_mat $dim2 x $dim3 >](
+                            mat,
+                            0,
+                            || mat.left_cols::<$dim1>()
+                        )
+                    }
+
+                    #[quickcheck]
+                    fn [< right $dim1 _of_mat $dim2 x $dim3 >](
+                        mat: Matrix<$dim2, $dim3>,
+                    ) -> bool {
+                        [< test_cols $dim1 _of_mat $dim2 x $dim3 >](
+                            mat,
+                            ($dim3 as usize).saturating_sub($dim1),
+                            || mat.right_cols::<$dim1>()
+                        )
+                    }
+                }
+
+                // FIXME: Had to disable some test configurations to keep compile times reasonable.
+                //        Do a measureme run to make sure we understand what's going on.
+                generate_tests!(
+                    ($dim1, $dim2, $dim3, 1),
+                    ($dim1, $dim2, $dim3, 2),
+                    ($dim1, $dim2, $dim3, 3),
+                    // ($dim1, $dim2, $dim3, 4),
+                    // ($dim1, $dim2, $dim3, 5),
+                    // ($dim1, $dim2, $dim3, 6),
+                    // ($dim1, $dim2, $dim3, 7),
+                    ($dim1, $dim2, $dim3, 8)
+                );
+            )*
+        };
+        ($(($dim1:literal, $dim2:literal, $dim3:literal, $dim4:literal)),*) => {
+            $(
+                paste! {
+                    // Signature of op asserts that output matrix has the right dimension at compile time
+                    fn [< test_block $dim1 x $dim2 _of_mat $dim3 x $dim4 >](
+                        mat: Matrix<$dim3, $dim4>,
+                        start_row: usize,
+                        start_col: usize,
+                        op: impl FnOnce() -> Matrix<$dim1, $dim2> + UnwindSafe
+                    ) -> bool {
+                        if $dim1 <= ($dim3 as usize).saturating_sub(start_row)
+                            && $dim2 <= ($dim4 as usize).saturating_sub(start_col)
+                        {
+                            for (src, dest) in
+                                mat.into_iter().skip(start_col).take($dim2)
+                                   .flat_map(|col| col.into_col_major_elems().skip(start_row).take($dim1))
+                                   .zip(op().into_col_major_elems())
+                            {
+                                assert_eq!(src.to_bits(), dest.to_bits());
+                            }
+                            true
+                        } else {
+                            panics(op)
+                        }
+                    }
+
+                    #[quickcheck]
+                    fn [< block $dim1 x $dim2 _of_mat $dim3 x $dim4 >](
+                        mat: Matrix<$dim3, $dim4>,
+                        start_row: usize,
+                        start_col: usize
+                    ) -> bool {
+                        [< test_block $dim1 x $dim2 _of_mat $dim3 x $dim4 >](
+                            mat,
+                            start_row,
+                            start_col,
+                            || mat.block::<$dim1, $dim2>(start_row, start_col)
+                        )
+                    }
+
+                    #[quickcheck]
+                    fn [< topleft $dim1 x $dim2 _of_mat $dim3 x $dim4 >](
+                        mat: Matrix<$dim3, $dim4>
+                    ) -> bool {
+                        [< test_block $dim1 x $dim2 _of_mat $dim3 x $dim4 >](
+                            mat,
+                            0,
+                            0,
+                            || mat.top_left_corner::<$dim1, $dim2>()
+                        )
+                    }
+
+                    #[quickcheck]
+                    fn [< topright $dim1 x $dim2 _of_mat $dim3 x $dim4 >](
+                        mat: Matrix<$dim3, $dim4>
+                    ) -> bool {
+                        [< test_block $dim1 x $dim2 _of_mat $dim3 x $dim4 >](
+                            mat,
+                            0,
+                            ($dim4 as usize).saturating_sub($dim2),
+                            || mat.top_right_corner::<$dim1, $dim2>()
+                        )
+                    }
+
+                    #[quickcheck]
+                    fn [< bottomleft $dim1 x $dim2 _of_mat $dim3 x $dim4 >](
+                        mat: Matrix<$dim3, $dim4>
+                    ) -> bool {
+                        [< test_block $dim1 x $dim2 _of_mat $dim3 x $dim4 >](
+                            mat,
+                            ($dim3 as usize).saturating_sub($dim1),
+                            0,
+                            || mat.bottom_left_corner::<$dim1, $dim2>()
+                        )
+                    }
+
+                    #[quickcheck]
+                    fn [< bottomright $dim1 x $dim2 _of_mat $dim3 x $dim4 >](
+                        mat: Matrix<$dim3, $dim4>
+                    ) -> bool {
+                        [< test_block $dim1 x $dim2 _of_mat $dim3 x $dim4 >](
+                            mat,
+                            ($dim3 as usize).saturating_sub($dim1),
+                            ($dim4 as usize).saturating_sub($dim2),
+                            || mat.bottom_right_corner::<$dim1, $dim2>()
+                        )
                     }
                 }
             )*
