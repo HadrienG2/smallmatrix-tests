@@ -681,8 +681,149 @@ impl<const DIM: usize> SquareMatrix<DIM> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use paste::paste;
     use quickcheck::TestResult;
     use quickcheck_macros::quickcheck;
 
-    // TODO: Add lots of tests
+    macro_rules! generate_tests {
+        () => { generate_tests!(1, 2, 3, 4, 5, 6, 7, 8); };
+        ($($dim:literal),*) => {
+            $(
+                paste! {
+                    #[test]
+                    fn [< unit_ $dim _in_range >]() {
+                        for idx in 0..$dim {
+                            let unit = Vector::<$dim>::unit(idx);
+                            for (idx2, elem) in unit.into_col_major_elems().enumerate() {
+                                assert_eq!(elem, (idx2 == idx) as u8 as Scalar);
+                            }
+                        }
+                    }
+
+                    #[quickcheck]
+                    #[should_panic]
+                    fn [< unit_ $dim _out_of_range >](idx: usize) -> TestResult {
+                        if idx < $dim {
+                            return TestResult::discard();
+                        }
+                        Vector::<$dim>::unit(idx);
+                        TestResult::failed()
+                    }
+
+                    #[test]
+                    fn [< identity_ $dim >]() {
+                        let identity = SquareMatrix::<$dim>::identity();
+                        for (col, col_vec) in identity.into_iter().enumerate() {
+                            for (row, elem) in col_vec.into_col_major_elems().enumerate() {
+                                assert_eq!(elem, (col == row) as u8 as Scalar);
+                            }
+                        }
+                    }
+
+                }
+
+                generate_tests!(($dim, 1), ($dim, 2), ($dim, 3), ($dim, 4), ($dim, 5), ($dim, 6), ($dim, 7), ($dim, 8));
+            )*
+        };
+        ($(($dim1:literal, $dim2:literal)),*) => {
+            $(
+                paste! {
+                    #[quickcheck]
+                    fn [< from_col_major_elems_ $dim1 x $dim2 _right_amount >](elems: Vec<Scalar>) -> TestResult {
+                        if elems.len() != $dim1 * $dim2 {
+                            return TestResult::discard();
+                        }
+                        let matrix = Matrix::<$dim1, $dim2>::from_col_major_elems(elems.iter().copied());
+                        for (src, dest) in elems.into_iter().zip(matrix.into_col_major_elems()) {
+                            assert_eq!(src.to_bits(), dest.to_bits());
+                        }
+                        TestResult::passed()
+                    }
+
+                    #[quickcheck]
+                    #[should_panic]
+                    fn [< from_col_major_elems_ $dim1 x $dim2 _wrong_amount >](elems: Vec<Scalar>) -> TestResult {
+                        if elems.len() == $dim1 * $dim2 {
+                            return TestResult::discard();
+                        }
+                        Matrix::<$dim1, $dim2>::from_col_major_elems(elems.into_iter());
+                        TestResult::failed()
+                    }
+
+                    #[quickcheck]
+                    fn [< into_col_major_elems_ $dim1 x $dim2 >](matrix: Matrix<$dim1, $dim2>) -> bool {
+                        assert_eq!(matrix.into_col_major_elems().count(), $dim1 * $dim2);
+                        for (idx, dest) in matrix.into_col_major_elems().enumerate() {
+                            let (col, row) = (idx / $dim1, idx % $dim1);
+                            let src = matrix[(row, col)];
+                            assert_eq!(src.to_bits(), dest.to_bits());
+                        }
+                        true
+                    }
+
+                    #[quickcheck]
+                    fn [< col_major_elems_ $dim1 x $dim2 >](matrix: Matrix<$dim1, $dim2>) -> bool {
+                        assert_eq!(matrix.col_major_elems().count(), $dim1 * $dim2);
+                        for (idx, dest_ref) in matrix.col_major_elems().enumerate() {
+                            let (col, row) = (idx / $dim1, idx % $dim1);
+                            assert_eq!(&matrix[(row, col)] as *const Scalar, dest_ref as *const Scalar);
+                        }
+                        true
+                    }
+
+                    #[quickcheck]
+                    fn [< col_major_elems_mut_ $dim1 x $dim2 >](mut matrix: Matrix<$dim1, $dim2>) -> bool {
+                        assert_eq!(matrix.col_major_elems_mut().count(), $dim1 * $dim2);
+                        let ptrs = matrix.col_major_elems_mut().map(|refmut| refmut as *mut Scalar).collect::<Vec<_>>();
+                        for (idx, ptr) in ptrs.into_iter().enumerate() {
+                            let (col, row) = (idx / $dim1, idx % $dim1);
+                            assert_eq!(&mut matrix[(row, col)] as *mut Scalar, ptr);
+                        }
+                        true
+                    }
+
+                    #[quickcheck]
+                    fn [< cat_ $dim1 _ $dim2 >](lhs: Vector<$dim1>, rhs: Vector<$dim2>) -> bool {
+                        // Assert that the output has the right dimension
+                        let out: Vector<{ $dim1 + $dim2 }> = lhs.cat(rhs);
+                        for (src, dest) in lhs.into_col_major_elems().chain(rhs.into_col_major_elems()).zip(out.into_col_major_elems()) {
+                            assert_eq!(src.to_bits(), dest.to_bits());
+                        }
+                        true
+                    }
+                }
+
+                generate_tests!(($dim1, $dim2, 1), ($dim1, $dim2, 2), ($dim1, $dim2, 3), ($dim1, $dim2, 4), ($dim1, $dim2, 5), ($dim1, $dim2, 6), ($dim1, $dim2, 7), ($dim1, $dim2, 8));
+            )*
+        };
+        ($(($dim1:literal, $dim2:literal, $dim3:literal)),*) => {
+            $(
+                paste! {
+                    #[quickcheck]
+                    fn [< hcat_ $dim1 x $dim2 _ $dim1 x $dim3 >](lhs: Matrix<$dim1, $dim2>, rhs: Matrix<$dim1, $dim3>) -> bool {
+                        // Assert that the output has the right dimension
+                        let out: Matrix<$dim1, { $dim2 + $dim3 }> = lhs.hcat(rhs);
+                        for (src, dest) in lhs.into_col_major_elems().chain(rhs.into_col_major_elems()).zip(out.into_col_major_elems()) {
+                            assert_eq!(src.to_bits(), dest.to_bits());
+                        }
+                        true
+                    }
+
+                    #[quickcheck]
+                    fn [< vcat_ $dim1 x $dim2 _ $dim3 x $dim2 >](lhs: Matrix<$dim1, $dim2>, rhs: Matrix<$dim3, $dim2>) -> bool {
+                        // Assert that the output has the right dimension
+                        let out: Matrix<{ $dim1 + $dim3 }, $dim2> = lhs.vcat(rhs);
+                        for ((col_lhs, col_rhs), col_dest) in lhs.into_iter().zip(rhs.into_iter()).zip(out.into_iter()) {
+                            let col_src = col_lhs.cat(col_rhs);
+                            for (src, dest) in col_src.into_col_major_elems().zip(col_dest.into_col_major_elems()) {
+                                assert_eq!(src.to_bits(), dest.to_bits());
+                            }
+                        }
+                        true
+                    }
+                }
+            )*
+        };
+    }
+    generate_tests!();
 }
