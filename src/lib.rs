@@ -786,6 +786,23 @@ mod tests {
         }
     }
 
+    fn test_cat<const LEFT_DIM: usize, const RIGHT_DIM: usize>(
+        lhs: Vector<LEFT_DIM>,
+        rhs: Vector<RIGHT_DIM>,
+    ) where
+        [(); LEFT_DIM + RIGHT_DIM]: ,
+    {
+        // Assert return type is right
+        let out: Vector<{ LEFT_DIM + RIGHT_DIM }> = lhs.cat(rhs);
+        for (src, dest) in lhs
+            .into_col_major_elems()
+            .chain(rhs.into_col_major_elems())
+            .zip(out.into_col_major_elems())
+        {
+            assert_eq!(src.to_bits(), dest.to_bits());
+        }
+    }
+
     fn test_hcat<const LEFT_ROWS: usize, const LEFT_COLS: usize, const RIGHT_COLS: usize>(
         lhs: Matrix<LEFT_ROWS, LEFT_COLS>,
         rhs: Matrix<LEFT_ROWS, RIGHT_COLS>,
@@ -959,7 +976,7 @@ mod tests {
 
                     #[quickcheck]
                     fn [< cat_vec $dim1 _vec $dim2 >](lhs: Vector<$dim1>, rhs: Vector<$dim2>) {
-                        test_vcat::<$dim1, 1, $dim2>(lhs, rhs);
+                        test_cat::<$dim1, $dim2>(lhs, rhs);
                     }
 
                     #[quickcheck]
