@@ -1094,12 +1094,16 @@ mod tests {
                         if $dim1 <= ($dim3 as usize).saturating_sub(start_row)
                             && $dim2 <= ($dim4 as usize).saturating_sub(start_col)
                         {
-                            for (src, dest) in
-                                mat.into_iter().skip(start_col).take($dim2)
-                                   .flat_map(|col| col.into_col_major_elems().skip(start_row).take($dim1))
-                                   .zip(op().into_col_major_elems())
-                            {
-                                assert_eq!(src.to_bits(), dest.to_bits());
+                            let result = op();
+                            for dest_row in 0..$dim1 {
+                                let src_row = dest_row + start_row;
+                                for dest_col in 0..$dim2 {
+                                    let src_col = dest_col + start_col;
+                                    assert_eq!(
+                                        result[(dest_row, dest_col)].to_bits(),
+                                        mat[(src_row, src_col)].to_bits()
+                                    );
+                                }
                             }
                             true
                         } else {
