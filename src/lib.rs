@@ -720,6 +720,90 @@ mod tests {
         }
     }
 
+    fn test_unit<const DIM: usize>(idx: usize) {
+        if idx < DIM {
+            // Assert return type is right
+            let unit: Vector<DIM> = Vector::<DIM>::unit(idx);
+            for (idx2, elem) in unit.into_col_major_elems().enumerate() {
+                assert_eq!(elem, (idx2 == idx) as u8 as Scalar);
+            }
+        } else {
+            assert!(panics(move || Vector::<DIM>::unit(idx)))
+        }
+    }
+
+    fn test_identity<const DIM: usize>() {
+        // Assert return type is right
+        let identity: SquareMatrix<DIM> = SquareMatrix::<DIM>::identity();
+        for (col, col_vec) in identity.into_iter().enumerate() {
+            for (row, elem) in col_vec.into_col_major_elems().enumerate() {
+                assert_eq!(elem, (col == row) as u8 as Scalar);
+            }
+        }
+    }
+
+    fn test_from_col_major_elems<const ROWS: usize, const COLS: usize>(elems: Vec<Scalar>) {
+        if elems.len() == ROWS * COLS {
+            // Assert return type is right
+            let mat: Matrix<ROWS, COLS> =
+                Matrix::<ROWS, COLS>::from_col_major_elems(elems.iter().copied());
+            for (src, dest) in elems.into_iter().zip(mat.into_col_major_elems()) {
+                assert_eq!(src.to_bits(), dest.to_bits());
+            }
+        } else {
+            assert!(panics(move || Matrix::<ROWS, COLS>::from_col_major_elems(
+                elems.into_iter()
+            )));
+        }
+    }
+
+    fn test_into_col_major_elems<const ROWS: usize, const COLS: usize>(mat: Matrix<ROWS, COLS>) {
+        assert_eq!(mat.into_col_major_elems().count(), ROWS * COLS);
+        for (idx, dest) in mat.into_col_major_elems().enumerate() {
+            let (col, row) = (idx / ROWS, idx % ROWS);
+            let src = mat[(row, col)];
+            assert_eq!(src.to_bits(), dest.to_bits());
+        }
+    }
+
+    fn test_col_major_elems<const ROWS: usize, const COLS: usize>(mat: Matrix<ROWS, COLS>) {
+        assert_eq!(mat.col_major_elems().count(), ROWS * COLS);
+        for (idx, dest_ref) in mat.col_major_elems().enumerate() {
+            let (col, row) = (idx / ROWS, idx % ROWS);
+            assert_eq!(&mat[(row, col)] as *const Scalar, dest_ref as *const Scalar);
+        }
+    }
+
+    fn test_col_major_elems_mut<const ROWS: usize, const COLS: usize>(mut mat: Matrix<ROWS, COLS>) {
+        assert_eq!(mat.col_major_elems_mut().count(), ROWS * COLS);
+        let ptrs = mat
+            .col_major_elems_mut()
+            .map(|refmut| refmut as *mut Scalar)
+            .collect::<Vec<_>>();
+        for (idx, ptr) in ptrs.into_iter().enumerate() {
+            let (col, row) = (idx / ROWS, idx % ROWS);
+            assert_eq!(&mut mat[(row, col)] as *mut Scalar, ptr);
+        }
+    }
+
+    fn test_dot<const DIM: usize>(lhs: Vector<DIM>, rhs: Vector<DIM>) {
+        // Assert return type is right
+        let result: Scalar = lhs.dot(rhs);
+        let expected = lhs
+            .into_col_major_elems()
+            .zip(rhs.into_col_major_elems())
+            .map(|(x, y)| x * y)
+            .sum::<Scalar>();
+        assert_close(expected, result);
+    }
+
+    fn test_norm<const DIM: usize>(vec: Vector<DIM>) {
+        // Assert return type is right
+        let result: Scalar = vec.norm();
+        let expected = vec.dot(vec).sqrt();
+        assert_close(expected, result);
+    }
+
     #[quickcheck]
     fn cross(lhs: Vector<3>, rhs: Vector<3>) {
         let expected = Vector::<3>::from_col_major_elems(
@@ -730,7 +814,7 @@ mod tests {
             ]
             .into_iter(),
         );
-        // Assert that the output has the right dimension
+        // Assert return type is right
         let result: Vector<3> = lhs.cross(rhs);
         for (expected, result) in expected
             .into_col_major_elems()
@@ -738,6 +822,13 @@ mod tests {
         {
             assert_close(expected, result);
         }
+    }
+
+    fn test_trace<const DIM: usize>(mat: SquareMatrix<DIM>) {
+        let expected = (0..DIM).map(|idx| mat[(idx, idx)]).sum::<Scalar>();
+        // Assert return type is right
+        let result: Scalar = mat.trace();
+        assert_close(expected, result);
     }
 
     macro_rules! generate_tests {
@@ -752,10 +843,7 @@ mod tests {
                     #[test]
                     fn [< unit $dim _in_range >]() {
                         for idx in 0..$dim {
-                            let unit = Vector::<$dim>::unit(idx);
-                            for (idx2, elem) in unit.into_col_major_elems().enumerate() {
-                                assert_eq!(elem, (idx2 == idx) as u8 as Scalar);
-                            }
+                            test_unit::<$dim>(idx);
                         }
                     }
 
@@ -764,43 +852,28 @@ mod tests {
                         if idx < $dim {
                             return TestResult::discard();
                         }
-                        TestResult::from_bool(panics(move || Vector::<$dim>::unit(idx)))
-
+                        test_unit::<$dim>(idx);
+                        TestResult::passed()
                     }
 
                     #[test]
                     fn [< identity $dim >]() {
-                        let identity = SquareMatrix::<$dim>::identity();
-                        for (col, col_vec) in identity.into_iter().enumerate() {
-                            for (row, elem) in col_vec.into_col_major_elems().enumerate() {
-                                assert_eq!(elem, (col == row) as u8 as Scalar);
-                            }
-                        }
+                        test_identity::<$dim>();
                     }
 
                     #[quickcheck]
                     fn [< dot $dim >](lhs: Vector<$dim>, rhs: Vector<$dim>) {
-                        let result = lhs.dot(rhs);
-                        let expected =
-                            lhs.into_col_major_elems()
-                               .zip(rhs.into_col_major_elems())
-                               .map(|(x, y)| x * y)
-                               .sum::<Scalar>();
-                        assert_close(expected, result);
+                        test_dot::<$dim>(lhs, rhs);
                     }
 
                     #[quickcheck]
                     fn [< norm $dim >](vec: Vector<$dim>) {
-                        let result = vec.norm();
-                        let expected = vec.dot(vec).sqrt();
-                        assert_close(expected, result);
+                        test_norm::<$dim>(vec);
                     }
 
                     #[quickcheck]
                     fn [< trace $dim >](mat: SquareMatrix<$dim>) {
-                        let expected = (0..$dim).map(|idx| mat[(idx, idx)]).sum::<Scalar>();
-                        let result = mat.trace();
-                        assert_close(expected, result);
+                        test_trace::<$dim>(mat);
                     }
                 }
 
@@ -822,45 +895,23 @@ mod tests {
             $(
                 paste! {
                     #[quickcheck]
-                    fn [< from_col_major_elems_ $dim1 x $dim2 >](elems: Vec<Scalar>) -> TestResult {
-                        if elems.len() == $dim1 * $dim2 {
-                            let matrix = Matrix::<$dim1, $dim2>::from_col_major_elems(elems.iter().copied());
-                            for (src, dest) in elems.into_iter().zip(matrix.into_col_major_elems()) {
-                                assert_eq!(src.to_bits(), dest.to_bits());
-                            }
-                            TestResult::passed()
-                        } else {
-                            TestResult::from_bool(panics(move || Matrix::<$dim1, $dim2>::from_col_major_elems(elems.into_iter())))
-                        }
+                    fn [< from_col_major_elems_ $dim1 x $dim2 >](elems: Vec<Scalar>) {
+                        test_from_col_major_elems::<$dim1, $dim2>(elems);
                     }
 
                     #[quickcheck]
-                    fn [< into_col_major_elems_ $dim1 x $dim2 >](matrix: Matrix<$dim1, $dim2>) {
-                        assert_eq!(matrix.into_col_major_elems().count(), $dim1 * $dim2);
-                        for (idx, dest) in matrix.into_col_major_elems().enumerate() {
-                            let (col, row) = (idx / $dim1, idx % $dim1);
-                            let src = matrix[(row, col)];
-                            assert_eq!(src.to_bits(), dest.to_bits());
-                        }
+                    fn [< into_col_major_elems_ $dim1 x $dim2 >](mat: Matrix<$dim1, $dim2>) {
+                        test_into_col_major_elems::<$dim1, $dim2>(mat);
                     }
 
                     #[quickcheck]
-                    fn [< col_major_elems_ $dim1 x $dim2 >](matrix: Matrix<$dim1, $dim2>) {
-                        assert_eq!(matrix.col_major_elems().count(), $dim1 * $dim2);
-                        for (idx, dest_ref) in matrix.col_major_elems().enumerate() {
-                            let (col, row) = (idx / $dim1, idx % $dim1);
-                            assert_eq!(&matrix[(row, col)] as *const Scalar, dest_ref as *const Scalar);
-                        }
+                    fn [< col_major_elems_ $dim1 x $dim2 >](mat: Matrix<$dim1, $dim2>) {
+                        test_col_major_elems::<$dim1, $dim2>(mat);
                     }
 
                     #[quickcheck]
-                    fn [< col_major_elems_mut_ $dim1 x $dim2 >](mut matrix: Matrix<$dim1, $dim2>) {
-                        assert_eq!(matrix.col_major_elems_mut().count(), $dim1 * $dim2);
-                        let ptrs = matrix.col_major_elems_mut().map(|refmut| refmut as *mut Scalar).collect::<Vec<_>>();
-                        for (idx, ptr) in ptrs.into_iter().enumerate() {
-                            let (col, row) = (idx / $dim1, idx % $dim1);
-                            assert_eq!(&mut matrix[(row, col)] as *mut Scalar, ptr);
-                        }
+                    fn [< col_major_elems_mut_ $dim1 x $dim2 >](mat: Matrix<$dim1, $dim2>) {
+                        test_col_major_elems_mut::<$dim1, $dim2>(mat);
                     }
 
                     #[quickcheck]
@@ -878,14 +929,11 @@ mod tests {
                         idx: usize,
                         op: Box<dyn FnOnce() -> Vector<$dim1> + UnwindSafe>
                     ) -> bool {
-                        if $dim1 <= ($dim2 as usize).saturating_sub(idx) {
-                            for (src, dest) in vec.into_col_major_elems().skip(idx).zip(op().into_col_major_elems()) {
-                                assert_eq!(src.to_bits(), dest.to_bits());
-                            }
-                            true
-                        } else {
-                            panics(op)
-                        }
+                        [< test_rows $dim1 _of_mat $dim2 x1 >](
+                            vec,
+                            idx,
+                            op
+                        )
                     }
 
                     #[quickcheck]
