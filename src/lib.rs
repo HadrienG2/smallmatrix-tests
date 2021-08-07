@@ -786,6 +786,44 @@ mod tests {
         }
     }
 
+    fn test_hcat<const LEFT_ROWS: usize, const LEFT_COLS: usize, const RIGHT_COLS: usize>(
+        lhs: Matrix<LEFT_ROWS, LEFT_COLS>,
+        rhs: Matrix<LEFT_ROWS, RIGHT_COLS>,
+    ) where
+        [(); LEFT_COLS + RIGHT_COLS]: ,
+    {
+        // Assert return type is right
+        let out: Matrix<LEFT_ROWS, { LEFT_COLS + RIGHT_COLS }> = lhs.hcat(rhs);
+        for (src, dest) in lhs
+            .into_col_major_elems()
+            .chain(rhs.into_col_major_elems())
+            .zip(out.into_col_major_elems())
+        {
+            assert_eq!(src.to_bits(), dest.to_bits());
+        }
+    }
+
+    fn test_vcat<const LEFT_ROWS: usize, const LEFT_COLS: usize, const RIGHT_ROWS: usize>(
+        lhs: Matrix<LEFT_ROWS, LEFT_COLS>,
+        rhs: Matrix<RIGHT_ROWS, LEFT_COLS>,
+    ) where
+        [(); LEFT_ROWS + RIGHT_ROWS]: ,
+    {
+        // Assert return type is right
+        let out: Matrix<{ LEFT_ROWS + RIGHT_ROWS }, LEFT_COLS> = lhs.vcat(rhs);
+        for ((col_lhs, col_rhs), col_dest) in
+            lhs.into_iter().zip(rhs.into_iter()).zip(out.into_iter())
+        {
+            let col_src = col_lhs.cat(col_rhs);
+            for (src, dest) in col_src
+                .into_col_major_elems()
+                .zip(col_dest.into_col_major_elems())
+            {
+                assert_eq!(src.to_bits(), dest.to_bits());
+            }
+        }
+    }
+
     fn test_dot<const DIM: usize>(lhs: Vector<DIM>, rhs: Vector<DIM>) {
         // Assert return type is right
         let result: Scalar = lhs.dot(rhs);
@@ -916,11 +954,7 @@ mod tests {
 
                     #[quickcheck]
                     fn [< cat_vec $dim1 _vec $dim2 >](lhs: Vector<$dim1>, rhs: Vector<$dim2>) {
-                        // Assert that the output has the right dimension
-                        let out: Vector<{ $dim1 + $dim2 }> = lhs.cat(rhs);
-                        for (src, dest) in lhs.into_col_major_elems().chain(rhs.into_col_major_elems()).zip(out.into_col_major_elems()) {
-                            assert_eq!(src.to_bits(), dest.to_bits());
-                        }
+                        test_vcat::<$dim1, 1, $dim2>(lhs, rhs);
                     }
 
                     // Signature of op asserts that output vector has the right dimension at compile time
@@ -1021,23 +1055,12 @@ mod tests {
                 paste! {
                     #[quickcheck]
                     fn [< hcat_ $dim1 x $dim2 _ $dim1 x $dim3 >](lhs: Matrix<$dim1, $dim2>, rhs: Matrix<$dim1, $dim3>) {
-                        // Assert that the output has the right dimension
-                        let out: Matrix<$dim1, { $dim2 + $dim3 }> = lhs.hcat(rhs);
-                        for (src, dest) in lhs.into_col_major_elems().chain(rhs.into_col_major_elems()).zip(out.into_col_major_elems()) {
-                            assert_eq!(src.to_bits(), dest.to_bits());
-                        }
+                        test_hcat::<$dim1, $dim2, $dim3>(lhs, rhs);
                     }
 
                     #[quickcheck]
                     fn [< vcat_ $dim1 x $dim2 _ $dim3 x $dim2 >](lhs: Matrix<$dim1, $dim2>, rhs: Matrix<$dim3, $dim2>) {
-                        // Assert that the output has the right dimension
-                        let out: Matrix<{ $dim1 + $dim3 }, $dim2> = lhs.vcat(rhs);
-                        for ((col_lhs, col_rhs), col_dest) in lhs.into_iter().zip(rhs.into_iter()).zip(out.into_iter()) {
-                            let col_src = col_lhs.cat(col_rhs);
-                            for (src, dest) in col_src.into_col_major_elems().zip(col_dest.into_col_major_elems()) {
-                                assert_eq!(src.to_bits(), dest.to_bits());
-                            }
-                        }
+                        test_vcat::<$dim1, $dim2, $dim3>(lhs, rhs);
                     }
 
                     // Signature of op asserts that output matrix has the right dimension at compile time
