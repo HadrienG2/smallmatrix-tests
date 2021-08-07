@@ -133,16 +133,19 @@ impl<const ROWS: usize, const COLS: usize> Matrix<ROWS, COLS> {
     /// Construction from column-major data
     pub fn from_col_major_elems<T: IntoIterator<Item = Scalar>>(input: T) -> Self {
         let mut result = Self::default();
-        let mut targets = result.0.iter_mut().flat_map(|col| col.iter_mut());
-        let mut sources = input.into_iter();
-        loop {
-            match (targets.next(), sources.next()) {
-                (Some(target), Some(source)) => *target = source,
-                (None, None) => break result,
-                (Some(_), None) => panic!("Too few elements in input iterator"),
-                (None, Some(_)) => panic!("Too many elements in input iterator"),
+        {
+            let mut targets = result.col_major_elems_mut();
+            let mut sources = input.into_iter();
+            loop {
+                match (targets.next(), sources.next()) {
+                    (Some(target), Some(source)) => *target = source,
+                    (None, None) => break,
+                    (Some(_), None) => panic!("Too few elements in input iterator"),
+                    (None, Some(_)) => panic!("Too many elements in input iterator"),
+                }
             }
         }
+        result
     }
 
     /// Turn into column-major data
