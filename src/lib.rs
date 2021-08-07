@@ -686,8 +686,13 @@ mod tests {
     use quickcheck_macros::quickcheck;
     use std::panic::UnwindSafe;
 
-    fn panics<F: FnOnce() -> R + UnwindSafe, R>(f: F) -> bool {
-        std::panic::catch_unwind(f).is_err()
+    fn panics<F: FnOnce() -> R + UnwindSafe + 'static, R>(f: F) -> bool {
+        fn polymorphic_impl(f: Box<dyn FnOnce() + UnwindSafe>) -> bool {
+            std::panic::catch_unwind(f).is_err()
+        }
+        polymorphic_impl(Box::new(|| {
+            f();
+        }))
     }
 
     fn assert_close(expected: Scalar, result: Scalar) {
@@ -744,7 +749,7 @@ mod tests {
                         if idx < $dim {
                             return TestResult::discard();
                         }
-                        TestResult::from_bool(panics(|| Vector::<$dim>::unit(idx)))
+                        TestResult::from_bool(panics(move || Vector::<$dim>::unit(idx)))
 
                     }
 
@@ -810,7 +815,7 @@ mod tests {
                             }
                             TestResult::passed()
                         } else {
-                            TestResult::from_bool(panics(|| Matrix::<$dim1, $dim2>::from_col_major_elems(elems.into_iter())))
+                            TestResult::from_bool(panics(move || Matrix::<$dim1, $dim2>::from_col_major_elems(elems.into_iter())))
                         }
                     }
 
@@ -856,7 +861,7 @@ mod tests {
                     fn [< test_segment $dim1 _of_vec $dim2 >](
                         vec: Vector<$dim2>,
                         idx: usize,
-                        op: impl FnOnce() -> Vector<$dim1> + UnwindSafe
+                        op: impl FnOnce() -> Vector<$dim1> + UnwindSafe + 'static
                     ) -> bool {
                         if $dim1 <= ($dim2 as usize).saturating_sub(idx) {
                             for (src, dest) in vec.into_col_major_elems().skip(idx).zip(op().into_col_major_elems()) {
@@ -873,7 +878,7 @@ mod tests {
                         [< test_segment $dim1 _of_vec $dim2 >](
                             vec,
                             idx,
-                            || vec.segment::<$dim1>(idx)
+                            move || vec.segment::<$dim1>(idx)
                         )
                     }
 
@@ -882,7 +887,7 @@ mod tests {
                         [< test_segment $dim1 _of_vec $dim2 >](
                             vec,
                             0,
-                            || vec.head::<$dim1>()
+                            move || vec.head::<$dim1>()
                         )
                     }
 
@@ -891,7 +896,7 @@ mod tests {
                         [< test_segment $dim1 _of_vec $dim2 >](
                             vec,
                             ($dim2 as usize).saturating_sub(($dim1 as usize)),
-                            || vec.tail::<$dim1>()
+                            move || vec.tail::<$dim1>()
                         )
                     }
 
@@ -903,7 +908,7 @@ mod tests {
                         [< test_rows1_of_mat $dim1 x $dim2 >](
                             mat,
                             row,
-                            || mat.row(row)
+                            move || mat.row(row)
                         )
                     }
 
@@ -915,7 +920,7 @@ mod tests {
                         [< test_cols1_of_mat $dim1 x $dim2 >](
                             mat,
                             col,
-                            || mat.col(col)
+                            move || mat.col(col)
                         )
                     }
 
@@ -976,7 +981,7 @@ mod tests {
                     fn [< test_rows $dim1 _of_mat $dim2 x $dim3 >](
                         mat: Matrix<$dim2, $dim3>,
                         start_row: usize,
-                        op: impl FnOnce() -> Matrix<$dim1, $dim3> + UnwindSafe
+                        op: impl FnOnce() -> Matrix<$dim1, $dim3> + UnwindSafe + 'static
                     ) -> bool {
                         [< test_block $dim1 x $dim3 _of_mat $dim2 x $dim3 >](mat, start_row, 0, op)
                     }
@@ -989,7 +994,7 @@ mod tests {
                         [< test_rows $dim1 _of_mat $dim2 x $dim3 >](
                             mat,
                             start_row,
-                            || mat.rows::<$dim1>(start_row)
+                            move || mat.rows::<$dim1>(start_row)
                         )
                     }
 
@@ -1000,7 +1005,7 @@ mod tests {
                         [< test_rows $dim1 _of_mat $dim2 x $dim3 >](
                             mat,
                             0,
-                            || mat.top_rows::<$dim1>()
+                            move || mat.top_rows::<$dim1>()
                         )
                     }
 
@@ -1011,7 +1016,7 @@ mod tests {
                         [< test_rows $dim1 _of_mat $dim2 x $dim3 >](
                             mat,
                             ($dim2 as usize).saturating_sub($dim1),
-                            || mat.bottom_rows::<$dim1>()
+                            move || mat.bottom_rows::<$dim1>()
                         )
                     }
 
@@ -1019,7 +1024,7 @@ mod tests {
                     fn [< test_cols $dim1 _of_mat $dim2 x $dim3 >](
                         mat: Matrix<$dim2, $dim3>,
                         start_col: usize,
-                        op: impl FnOnce() -> Matrix<$dim2, $dim1> + UnwindSafe
+                        op: impl FnOnce() -> Matrix<$dim2, $dim1> + UnwindSafe + 'static
                     ) -> bool {
                         [< test_block $dim2 x $dim1 _of_mat $dim2 x $dim3 >](mat, 0, start_col, op)
                     }
@@ -1032,7 +1037,7 @@ mod tests {
                         [< test_cols $dim1 _of_mat $dim2 x $dim3 >](
                             mat,
                             start_col,
-                            || mat.cols::<$dim1>(start_col)
+                            move || mat.cols::<$dim1>(start_col)
                         )
                     }
 
@@ -1043,7 +1048,7 @@ mod tests {
                         [< test_cols $dim1 _of_mat $dim2 x $dim3 >](
                             mat,
                             0,
-                            || mat.left_cols::<$dim1>()
+                            move || mat.left_cols::<$dim1>()
                         )
                     }
 
@@ -1054,7 +1059,7 @@ mod tests {
                         [< test_cols $dim1 _of_mat $dim2 x $dim3 >](
                             mat,
                             ($dim3 as usize).saturating_sub($dim1),
-                            || mat.right_cols::<$dim1>()
+                            move || mat.right_cols::<$dim1>()
                         )
                     }
                 }
@@ -1081,7 +1086,7 @@ mod tests {
                         mat: Matrix<$dim3, $dim4>,
                         start_row: usize,
                         start_col: usize,
-                        op: impl FnOnce() -> Matrix<$dim1, $dim2> + UnwindSafe
+                        op: impl FnOnce() -> Matrix<$dim1, $dim2> + UnwindSafe + 'static
                     ) -> bool {
                         if $dim1 <= ($dim3 as usize).saturating_sub(start_row)
                             && $dim2 <= ($dim4 as usize).saturating_sub(start_col)
@@ -1109,7 +1114,7 @@ mod tests {
                             mat,
                             start_row,
                             start_col,
-                            || mat.block::<$dim1, $dim2>(start_row, start_col)
+                            move || mat.block::<$dim1, $dim2>(start_row, start_col)
                         )
                     }
 
@@ -1121,7 +1126,7 @@ mod tests {
                             mat,
                             0,
                             0,
-                            || mat.top_left_corner::<$dim1, $dim2>()
+                            move || mat.top_left_corner::<$dim1, $dim2>()
                         )
                     }
 
@@ -1133,7 +1138,7 @@ mod tests {
                             mat,
                             0,
                             ($dim4 as usize).saturating_sub($dim2),
-                            || mat.top_right_corner::<$dim1, $dim2>()
+                            move || mat.top_right_corner::<$dim1, $dim2>()
                         )
                     }
 
@@ -1145,7 +1150,7 @@ mod tests {
                             mat,
                             ($dim3 as usize).saturating_sub($dim1),
                             0,
-                            || mat.bottom_left_corner::<$dim1, $dim2>()
+                            move || mat.bottom_left_corner::<$dim1, $dim2>()
                         )
                     }
 
@@ -1157,7 +1162,7 @@ mod tests {
                             mat,
                             ($dim3 as usize).saturating_sub($dim1),
                             ($dim4 as usize).saturating_sub($dim2),
-                            || mat.bottom_right_corner::<$dim1, $dim2>()
+                            move || mat.bottom_right_corner::<$dim1, $dim2>()
                         )
                     }
                 }
