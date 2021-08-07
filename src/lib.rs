@@ -297,10 +297,21 @@ impl<const ROWS: usize, const COLS: usize> Matrix<ROWS, COLS> {
         start_row: usize,
         start_col: usize,
     ) -> Matrix<SUB_ROWS, SUB_COLS> {
-        assert_le!(SUB_ROWS, ROWS, "Block rows are out of bounds");
-        assert_le!(start_row, ROWS - SUB_ROWS, "Start row is out of bounds");
-        assert_le!(SUB_COLS, COLS, "Block cols are out of bounds");
-        assert_le!(start_col, COLS - SUB_COLS, "Start col is out of bounds");
+        // Code bloat optimization
+        fn validate_block(
+            start_row: usize,
+            sub_rows: usize,
+            rows: usize,
+            start_col: usize,
+            sub_cols: usize,
+            cols: usize,
+        ) {
+            assert_le!(sub_rows, rows, "Block rows are out of bounds");
+            assert_le!(start_row, rows - sub_rows, "Start row is out of bounds");
+            assert_le!(sub_cols, cols, "Block cols are out of bounds");
+            assert_le!(start_col, cols - sub_cols, "Start col is out of bounds");
+        }
+        validate_block(start_row, SUB_ROWS, ROWS, start_col, SUB_COLS, COLS);
         Matrix::<SUB_ROWS, SUB_COLS>::from_iter(
             self.into_iter()
                 .skip(start_col)
@@ -690,6 +701,7 @@ mod tests {
     use std::panic::UnwindSafe;
 
     fn panics<F: FnOnce() -> R + UnwindSafe + 'static, R>(f: F) -> bool {
+        // Code bloat optimization
         fn polymorphic_impl(f: Box<dyn FnOnce() + UnwindSafe>) -> bool {
             std::panic::catch_unwind(f).is_err()
         }
