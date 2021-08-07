@@ -1,3 +1,9 @@
+//! Matrix block extraction tests
+//!
+//! Split into their own codegen unit and operating on a reduced range of
+//! matrix sizes and block dimensions for code bloat reasons. The O(N^4)
+//! combinatorics of matrix block testing aren't nice.
+
 mod common;
 
 use self::common::assert_panics;
@@ -21,6 +27,7 @@ fn test_block<
     if BLOCK_ROWS <= ROWS.saturating_sub(start_row) && BLOCK_COLS <= COLS.saturating_sub(start_col)
     {
         let result = op();
+        // Raw loop is preferred over iterators to reduce code bloat
         for dest_row in 0..BLOCK_ROWS {
             let src_row = dest_row + start_row;
             for dest_col in 0..BLOCK_COLS {
@@ -66,9 +73,6 @@ fn test_cols<const ROWS: usize, const COLS: usize, const BLOCK_COLS: usize>(
 // Generate tests for specific matrix dimensions
 macro_rules! generate_tests {
     () => {
-        // Blocks tests have huge combinatorics, so we only generate them for a
-        // small range of matrix dimensions, which is still large enough to
-        // catch good old off-by-one issues
         generate_tests!(1, 2, 3);
     };
     ($($dim:literal),*) => {
