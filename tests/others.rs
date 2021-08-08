@@ -2,22 +2,11 @@
 
 mod common;
 
-use self::common::assert_panics;
-use more_asserts::*;
+use self::common::{assert_close_matrix, assert_close_scalar, assert_panics};
 use paste::paste;
 use quickcheck::TestResult;
 use quickcheck_macros::quickcheck;
 use simd_tests::{Matrix, Scalar, SquareMatrix, Vector, X, Y, Z};
-
-fn assert_close(expected: Scalar, result: Scalar) {
-    if expected.is_nan() {
-        assert_eq!(result.to_bits(), expected.to_bits());
-    } else if expected.is_infinite() {
-        assert_eq!(result, expected);
-    } else {
-        assert_le!((result - expected).abs(), Scalar::EPSILON * expected.abs());
-    }
-}
 
 fn test_unit<const DIM: usize>(idx: usize) {
     if idx < DIM {
@@ -99,22 +88,26 @@ fn test_transpose<const ROWS: usize, const COLS: usize>(mat: Matrix<ROWS, COLS>)
     }
 }
 
-fn test_dot<const DIM: usize>(lhs: Vector<DIM>, rhs: Vector<DIM>) {
-    // Assert return type is right
-    let result: Scalar = lhs.dot(rhs);
+fn test_dot<const ROWS: usize, const COLS: usize>(
+    lhs: Matrix<ROWS, COLS>,
+    rhs: Matrix<ROWS, COLS>,
+) {
     let expected = lhs
         .into_col_major_elems()
         .zip(rhs.into_col_major_elems())
         .map(|(x, y)| x * y)
         .sum::<Scalar>();
-    assert_close(expected, result);
+    assert_close_scalar(expected, lhs.dot(rhs), lhs.norm() * rhs.norm());
 }
 
-fn test_norm<const DIM: usize>(vec: Vector<DIM>) {
-    // Assert return type is right
-    let result: Scalar = vec.norm();
-    let expected = vec.dot(vec).sqrt();
-    assert_close(expected, result);
+fn test_squared_norm<const ROWS: usize, const COLS: usize>(mat: Matrix<ROWS, COLS>) {
+    let expected = mat.dot(mat);
+    assert_close_scalar(expected, mat.squared_norm(), mat.squared_norm());
+}
+
+fn test_norm<const ROWS: usize, const COLS: usize>(mat: Matrix<ROWS, COLS>) {
+    let expected = mat.squared_norm().sqrt();
+    assert_close_scalar(expected, mat.norm(), mat.norm());
 }
 
 #[quickcheck]
@@ -127,22 +120,16 @@ fn cross(lhs: Vector<3>, rhs: Vector<3>) {
         ]
         .into_iter(),
     );
-    // Assert return type is right
-    let result: Vector<3> = lhs.cross(rhs);
-    for (expected, result) in expected
-        .into_col_major_elems()
-        .zip(result.into_col_major_elems())
-    {
-        assert_close(expected, result);
-    }
+    assert_close_matrix(expected, lhs.cross(rhs), lhs.norm() * rhs.norm());
 }
 
 fn test_trace<const DIM: usize>(mat: SquareMatrix<DIM>) {
     let expected = (0..DIM).map(|idx| mat[(idx, idx)]).sum::<Scalar>();
-    // Assert return type is right
-    let result: Scalar = mat.trace();
-    assert_close(expected, result);
+    assert_close_scalar(expected, mat.trace(), mat.norm());
 }
+
+// NOTE: Matrix determinant, inverse, and related quantities have been split
+//       into the separate "detinv" test
 
 macro_rules! generate_tests {
     () => {
@@ -170,16 +157,6 @@ macro_rules! generate_tests {
                 #[test]
                 fn [< identity $dim >]() {
                     test_identity::<$dim>();
-                }
-
-                #[quickcheck]
-                fn [< dot $dim >](lhs: Vector<$dim>, rhs: Vector<$dim>) {
-                    test_dot::<$dim>(lhs, rhs);
-                }
-
-                #[quickcheck]
-                fn [< norm $dim >](vec: Vector<$dim>) {
-                    test_norm::<$dim>(vec);
                 }
 
                 #[quickcheck]
@@ -220,6 +197,21 @@ macro_rules! generate_tests {
                 #[quickcheck]
                 fn [< col_major_elems_mut_ $dim1 x $dim2 >](mat: Matrix<$dim1, $dim2>) {
                     test_col_major_elems_mut::<$dim1, $dim2>(mat);
+                }
+
+                #[quickcheck]
+                fn [< dot $dim1 x $dim2 >](lhs: Matrix<$dim1, $dim2>, rhs: Matrix<$dim1, $dim2>) {
+                    test_dot::<$dim1, $dim2>(lhs, rhs);
+                }
+
+                #[quickcheck]
+                fn [< squared_norm $dim1 x $dim2 >](mat: Matrix<$dim1, $dim2>) {
+                    test_squared_norm::<$dim1, $dim2>(mat);
+                }
+
+                #[quickcheck]
+                fn [< norm $dim1 x $dim2 >](mat: Matrix<$dim1, $dim2>) {
+                    test_norm::<$dim1, $dim2>(mat);
                 }
 
                 #[quickcheck]

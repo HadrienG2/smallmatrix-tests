@@ -182,6 +182,7 @@ impl<const ROWS: usize, const COLS: usize> FromIterator<ColVector<ROWS>> for Mat
 }
 
 /// Iterator over the columns of a matrix
+#[derive(Clone, Debug)]
 pub struct ColIter<const ROWS: usize, const COLS: usize>(
     core::array::IntoIter<[Scalar; ROWS], COLS>,
 );
@@ -527,16 +528,30 @@ impl<RHS: Into<usize>, const DIM: usize> Pow<RHS> for SquareMatrix<DIM> {
         num_traits::pow::pow(self, rhs.into())
     }
 }
+//
+impl<const DIM: usize> SquareMatrix<DIM> {
+    pub fn pow<RHS: Into<usize>>(self, rhs: RHS) -> Self {
+        <Self as Pow<RHS>>::pow(self, rhs)
+    }
+}
 
-impl<const DIM: usize> ColVector<DIM> {
-    /// Vector dot product
+impl<const ROWS: usize, const COLS: usize> Matrix<ROWS, COLS> {
+    /// Froebenius dot product
     pub fn dot(self, rhs: Self) -> Scalar {
-        (self.transpose() * rhs).into()
+        self.into_col_major_elems()
+            .zip(rhs.into_col_major_elems())
+            .map(|(x, y)| x * y)
+            .sum()
     }
 
-    /// Vector norm
+    /// Froebenius squared norm
+    pub fn squared_norm(self) -> Scalar {
+        self.dot(self)
+    }
+
+    /// Froebenius norm
     pub fn norm(self) -> Scalar {
-        self.dot(self).sqrt()
+        self.squared_norm().sqrt()
     }
 }
 
