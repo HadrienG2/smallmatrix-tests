@@ -1,3 +1,5 @@
+#![feature(const_generics, const_evaluatable_checked)]
+
 //! Tests of inverse and determinant-like computations
 //!
 //! Due to their N! combinatorics, these computations cannot be tested using a
@@ -10,7 +12,47 @@ use self::common::{assert_close_matrix, assert_close_scalar, assert_panics};
 use paste::paste;
 use quickcheck::TestResult;
 use quickcheck_macros::quickcheck;
-use simd_tests::{ColVector, Matrix, Scalar, SquareMatrix};
+use simd_tests::{ColVector, ConstCheck, Matrix, Scalar, SquareMatrix, True};
+
+fn test_minor<const DIM: usize>(mat: SquareMatrix<DIM>, row: usize, col: usize)
+where
+    [(); DIM - 1]: ,
+    ConstCheck<{ DIM >= 2 }>: True,
+{
+    if row >= DIM || col >= DIM {
+        assert_panics(move || mat.minor(row, col))
+    } else {
+        let sub_mat = SquareMatrix::<{ DIM - 1 }>::from_iter(
+            mat.into_iter()
+                .take(col)
+                .chain(mat.into_iter().skip(col + 1))
+                .map(|col| {
+                    ColVector::<{ DIM - 1 }>::from_col_major_elems(
+                        col.into_col_major_elems()
+                            .take(row)
+                            .chain(col.into_col_major_elems().skip(row + 1)),
+                    )
+                }),
+        );
+        assert_close_scalar(sub_mat.det(), mat.minor(row, col), mat.norm());
+    }
+}
+
+fn test_cofactor<const DIM: usize>(mat: SquareMatrix<DIM>, row: usize, col: usize)
+where
+    [(); DIM - 1]: ,
+    ConstCheck<{ DIM >= 2 }>: True,
+{
+    if row >= DIM || col >= DIM {
+        assert_panics(move || mat.cofactor(row, col))
+    } else {
+        assert_close_scalar(
+            (-1.0 as Scalar).powi((row + col) as _) * mat.minor(row, col),
+            mat.cofactor(row, col),
+            mat.norm(),
+        );
+    }
+}
 
 fn test_det_identity<const DIM: usize>() {
     assert_close_scalar(1.0, SquareMatrix::<DIM>::identity().det(), 1.0);
@@ -48,11 +90,10 @@ fn test_det_alternating<const DIM: usize>(
     mat: SquareMatrix<DIM>,
     idx1: usize,
     idx2: usize,
-) -> TestResult {
-    if DIM < 2 {
-        return TestResult::passed();
-    }
-
+) -> TestResult
+where
+    ConstCheck<{ DIM >= 2 }>: True,
+{
     let idx1 = idx1 % DIM;
     let idx2 = idx2 % DIM;
     if idx1 == idx2 {
@@ -70,28 +111,29 @@ fn test_det_alternating<const DIM: usize>(
 }
 
 fn test_inverse<const DIM: usize>(mat: SquareMatrix<DIM>) -> TestResult {
+    let norm = mat.norm();
+    if !norm.is_finite() || norm < Scalar::EPSILON || norm > 1.0 / Scalar::EPSILON {
+        return TestResult::discard();
+    }
+
     let det = mat.det();
-    if !det.is_finite() {
-        TestResult::discard()
-    } else if det == 0.0 {
+    if det == 0.0 {
         assert_panics(move || mat.inverse());
         TestResult::passed()
-    } else if det.abs() <= Scalar::EPSILON {
+    } else if det.abs() < Scalar::EPSILON {
         TestResult::discard()
     } else {
-        let inverse = mat.inverse();
-        assert_close_matrix(
-            SquareMatrix::<DIM>::identity(),
-            mat * inverse,
-            mat.norm() * inverse.norm(),
-        );
+        assert_close_matrix(SquareMatrix::<DIM>::identity(), mat * mat.inverse(), 1.0);
         TestResult::passed()
     }
 }
 
+// Some tests should be able to run for all matrix dimensions...
 macro_rules! generate_tests {
     () => {
-        generate_tests!(1, 2, 3);
+        generate_tests!(1, 2, 3, 4, 5);
+        #[cfg(not(debug_assertions))]
+        generate_tests!(6, 7);
     };
     ($($dim:literal),*) => {
         $(
@@ -112,6 +154,26 @@ macro_rules! generate_tests {
                 }
 
                 #[quickcheck]
+                fn [< inverse $dim >](mat: SquareMatrix<$dim>) -> TestResult {
+                    test_inverse::<$dim>(mat)
+                }
+            }
+        )*
+    }
+}
+generate_tests!();
+
+// ...while others only make sense for matrix dimensions above 2
+macro_rules! generate_more_tests {
+    () => {
+        generate_more_tests!(2, 3, 4, 5);
+        #[cfg(not(debug_assertions))]
+        generate_more_tests!(6, 7);
+    };
+    ($($dim:literal),*) => {
+        $(
+            paste! {
+                #[quickcheck]
                 fn [< det $dim _alternating >](
                     mat: SquareMatrix<$dim>,
                     idx1: usize,
@@ -121,11 +183,24 @@ macro_rules! generate_tests {
                 }
 
                 #[quickcheck]
-                fn [< inverse $dim >](mat: SquareMatrix<$dim>) -> TestResult {
-                    test_inverse::<$dim>(mat)
+                fn [< minor $dim >](
+                    mat: SquareMatrix<$dim>,
+                    row: usize,
+                    col: usize,
+                ) {
+                    test_minor::<$dim>(mat, row, col)
+                }
+
+                #[quickcheck]
+                fn [< cofactor $dim >](
+                    mat: SquareMatrix<$dim>,
+                    row: usize,
+                    col: usize,
+                ) {
+                    test_cofactor::<$dim>(mat, row, col)
                 }
             }
         )*
     }
 }
-generate_tests!();
+generate_more_tests!();
