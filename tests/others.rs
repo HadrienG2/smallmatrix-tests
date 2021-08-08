@@ -128,8 +128,8 @@ fn test_trace<const DIM: usize>(mat: SquareMatrix<DIM>) {
     assert_close_scalar(expected, mat.trace(), mat.norm());
 }
 
-// NOTE: Matrix determinant, inverse, and related quantities have been split
-//       into the separate "detinv" test
+// NOTE: Matrix determinant, inverse, minor and cofactor have been split into
+//       the separate "detinv" test
 
 macro_rules! generate_tests {
     () => {
