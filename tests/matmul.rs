@@ -48,16 +48,10 @@ fn test_product<const DIM: usize>(mats: Vec<SquareMatrix<DIM>>) -> TestResult {
     }
 }
 
-pub fn test_pow<const DIM: usize>(mut lhs: SquareMatrix<DIM>, rhs: u8) -> TestResult {
-    // Naive pow diverges from exponentiation by squaring (for the worse) at higher powers
-    if rhs > 16 {
-        return TestResult::discard();
-    } else {
-        lhs /= lhs.norm();
-        let expected = std::iter::repeat(lhs).take(rhs as _).product();
-        assert_close_matrix(expected, lhs.pow(rhs), expected.norm());
-        TestResult::passed()
-    }
+pub fn test_pow<const DIM: usize>(mut lhs: SquareMatrix<DIM>, rhs: u8) {
+    lhs /= lhs.norm();
+    let expected = num_traits::pow::pow(lhs, rhs.into());
+    assert_close_matrix(expected, lhs.pow(rhs), expected.norm());
 }
 
 macro_rules! generate_tests {
@@ -73,7 +67,7 @@ macro_rules! generate_tests {
                 }
 
                 #[quickcheck]
-                fn [< pow $dim x $dim >](lhs: SquareMatrix<$dim>, rhs: u8) -> TestResult {
+                fn [< pow $dim x $dim >](lhs: SquareMatrix<$dim>, rhs: u8) {
                     test_pow::<$dim>(lhs, rhs)
                 }
             }
