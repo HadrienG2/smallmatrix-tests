@@ -9,6 +9,7 @@ mod common;
 use self::common::*;
 use num_traits::One;
 use paste::paste;
+use quickcheck::TestResult;
 use quickcheck_macros::quickcheck;
 use simd_tests::{Matrix, SquareMatrix};
 
@@ -41,7 +42,8 @@ fn test_product<const DIM: usize>(mats: Vec<SquareMatrix<DIM>>) {
     assert_close_matrix(expected, mats.into_iter().product(), expected.norm());
 }
 
-pub fn test_pow<const DIM: usize>(lhs: SquareMatrix<DIM>, rhs: u8) {
+pub fn test_pow<const DIM: usize>(mut lhs: SquareMatrix<DIM>, rhs: u8) {
+    lhs /= lhs.norm();
     let expected = std::iter::repeat(lhs).take(rhs as _).product();
     assert_close_matrix(expected, lhs.pow(rhs), expected.norm());
 }
@@ -55,12 +57,12 @@ macro_rules! generate_tests {
             paste! {
                 #[quickcheck]
                 fn [< product $dim x $dim >](mats: Vec<SquareMatrix<$dim>>) {
-                    test_product::<$dim>(mats);
+                    test_product::<$dim>(mats)
                 }
 
                 #[quickcheck]
                 fn [< pow $dim x $dim >](lhs: SquareMatrix<$dim>, rhs: u8) {
-                    test_pow::<$dim>(lhs, rhs);
+                    test_pow::<$dim>(lhs, rhs)
                 }
             }
 
@@ -78,7 +80,7 @@ macro_rules! generate_tests {
             paste! {
                 #[quickcheck]
                 fn [< matmul_assign_ $dim1 x $dim2 >](lhs: Matrix<$dim1, $dim2>, rhs: Matrix<$dim2, $dim2>) {
-                    test_matmul_assign::<$dim1, $dim2>(lhs, rhs);
+                    test_matmul_assign::<$dim1, $dim2>(lhs, rhs)
                 }
             }
 
@@ -96,7 +98,7 @@ macro_rules! generate_tests {
             paste! {
                 #[quickcheck]
                 fn [< matmul_ $dim1 x $dim2 _by_ $dim2 x $dim3 >](lhs: Matrix<$dim1, $dim2>, rhs: Matrix<$dim2, $dim3>) {
-                    test_matmul::<$dim1, $dim2, $dim3>(lhs, rhs);
+                    test_matmul::<$dim1, $dim2, $dim3>(lhs, rhs)
                 }
             }
         )*
