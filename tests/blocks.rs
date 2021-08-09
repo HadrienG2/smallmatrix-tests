@@ -6,7 +6,7 @@
 
 mod common;
 
-use self::common::assert_panics;
+use self::common::*;
 use paste::paste;
 use quickcheck_macros::quickcheck;
 use simd_tests::{Matrix, Vector};

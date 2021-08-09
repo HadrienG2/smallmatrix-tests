@@ -13,6 +13,19 @@ pub fn assert_panics<F: FnOnce() -> R + UnwindSafe + 'static, R>(f: F) {
     }))
 }
 
+// Function signature asserts that the matrix type is the same
+pub fn assert_bits_eq<const ROWS: usize, const COLS: usize>(
+    expected: Matrix<ROWS, COLS>,
+    result: Matrix<ROWS, COLS>,
+) {
+    for (expected, result) in expected
+        .into_col_major_elems()
+        .zip(result.into_col_major_elems())
+    {
+        assert_eq!(expected.to_bits(), result.to_bits());
+    }
+}
+
 #[allow(unused)]
 pub fn assert_close_scalar(expected: Scalar, result: Scalar, magnitude: Scalar) {
     // Ignore NaN and inf results, they are sensitive to the order of operations

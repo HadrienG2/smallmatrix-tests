@@ -110,14 +110,15 @@ where
     TestResult::passed()
 }
 
-fn test_inverse<const DIM: usize>(mat: SquareMatrix<DIM>) -> TestResult {
-    let norm = mat.norm();
-    if !norm.is_finite() || norm < Scalar::EPSILON || norm > 1.0 / Scalar::EPSILON {
-        return TestResult::discard();
-    }
-
+fn test_inverse<const DIM: usize>(mut mat: SquareMatrix<DIM>) -> TestResult {
+    // Matrix inversion is very sensitive to conditioning, so we only test it on
+    // normalized matrices. This also has the advantage of propagating any inner
+    // NaNs all over the matrix, so it ends up in the determinant.
+    mat /= mat.norm();
     let det = mat.det();
-    if det == 0.0 {
+    if !det.is_finite() {
+        TestResult::discard()
+    } else if det == 0.0 {
         assert_panics(move || mat.inverse());
         TestResult::passed()
     } else if det.abs() < Scalar::EPSILON {

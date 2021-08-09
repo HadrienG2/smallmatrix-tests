@@ -2,11 +2,11 @@
 
 mod common;
 
-use self::common::{assert_close_matrix, assert_close_scalar, assert_panics};
+use self::common::*;
 use paste::paste;
 use quickcheck::TestResult;
 use quickcheck_macros::quickcheck;
-use simd_tests::{Matrix, Scalar, SquareMatrix, Vector, X, Y, Z};
+use simd_tests::{ColVector, Matrix, Scalar, SquareMatrix, Vector, X, Y, Z};
 
 fn test_unit<const DIM: usize>(idx: usize) {
     if idx < DIM {
@@ -131,6 +131,61 @@ fn test_trace<const DIM: usize>(mat: SquareMatrix<DIM>) {
 // NOTE: Matrix determinant, inverse, minor and cofactor have been split into
 //       the separate "detinv" test
 
+fn test_add<const ROWS: usize, const COLS: usize>(
+    mut lhs: Matrix<ROWS, COLS>,
+    rhs: Matrix<ROWS, COLS>,
+) {
+    let expected = Matrix::<ROWS, COLS>::from_col_major_elems(
+        lhs.into_col_major_elems()
+            .zip(rhs.into_col_major_elems())
+            .map(|(x, y)| x + y),
+    );
+    let sum = lhs + rhs;
+    assert_close_matrix(expected, sum, expected.norm());
+    lhs += rhs;
+    assert_close_matrix(expected, lhs, expected.norm());
+}
+
+fn test_clone<const ROWS: usize, const COLS: usize>(mat: Matrix<ROWS, COLS>) {
+    let expected = Matrix::<ROWS, COLS>::from_col_major_elems(mat.into_col_major_elems());
+    assert_close_matrix(expected, mat.clone(), mat.norm());
+}
+
+fn test_default<const ROWS: usize, const COLS: usize>() {
+    let expected = Matrix::<ROWS, COLS>::from_col_major_elems(
+        std::iter::repeat(Scalar::default()).take(ROWS * COLS),
+    );
+    assert_close_matrix(expected, Matrix::<ROWS, COLS>::default(), Scalar::default());
+}
+
+fn test_div<const ROWS: usize, const COLS: usize>(mut lhs: Matrix<ROWS, COLS>, rhs: Scalar) {
+    let expected =
+        Matrix::<ROWS, COLS>::from_col_major_elems(lhs.into_col_major_elems().map(|lhs| lhs / rhs));
+    let quot = lhs / rhs;
+    assert_close_matrix(expected, quot, expected.norm());
+    lhs /= rhs;
+    assert_close_matrix(expected, lhs, expected.norm());
+}
+
+#[quickcheck]
+fn scalar_1x1_conv(x: Scalar) {
+    let expected = Matrix::<1, 1>::from_col_major_elems(std::iter::once(x));
+    assert_bits_eq(expected, Matrix::<1, 1>::from(x));
+    assert_eq!(x.to_bits(), Scalar::from(expected).to_bits());
+}
+
+fn test_iterator<const ROWS: usize, const COLS: usize>(mat: Matrix<ROWS, COLS>) {
+    assert_eq!(mat.into_iter().count(), COLS);
+    for (idx, col_vec) in mat.into_iter().enumerate() {
+        let expected = mat.col(idx);
+        assert_bits_eq(expected, col_vec);
+    }
+    assert_bits_eq(mat, Matrix::<ROWS, COLS>::from_iter(mat.into_iter()));
+}
+
+// NOTE: Index operator is tested as a unit test because the test needs access
+//       to the implementation, to avoid being a synonym of col-major iter tests
+
 macro_rules! generate_tests {
     () => {
         generate_tests!(1, 2, 3, 4, 5, 6);
@@ -216,6 +271,31 @@ macro_rules! generate_tests {
                 #[quickcheck]
                 fn [< transpose $dim1 x $dim2 >](mat: Matrix<$dim1, $dim2>) {
                     test_transpose::<$dim1, $dim2>(mat)
+                }
+
+                #[quickcheck]
+                fn [< add $dim1 x $dim2 >](lhs: Matrix<$dim1, $dim2>, rhs: Matrix<$dim1, $dim2>) {
+                    test_add::<$dim1, $dim2>(lhs, rhs);
+                }
+
+                #[quickcheck]
+                fn [< clone $dim1 x $dim2 >](mat: Matrix<$dim1, $dim2>) {
+                    test_clone::<$dim1, $dim2>(mat);
+                }
+
+                #[test]
+                fn [< default $dim1 x $dim2 >]() {
+                    test_default::<$dim1, $dim2>();
+                }
+
+                #[quickcheck]
+                fn [< div $dim1 x $dim2 >](lhs: Matrix<$dim1, $dim2>, rhs: Scalar) {
+                    test_div::<$dim1, $dim2>(lhs, rhs);
+                }
+
+                #[quickcheck]
+                fn [< iterator $dim1 x $dim2 >](mat: Matrix<$dim1, $dim2>) {
+                    test_iterator::<$dim1, $dim2>(mat);
                 }
             }
         )*
