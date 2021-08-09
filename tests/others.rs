@@ -248,7 +248,7 @@ fn test_trace<const DIM: usize>(mat: SquareMatrix<DIM>) {
 
 macro_rules! generate_tests {
     () => {
-        generate_tests!(1, 2, 3, 4, 5, 6);
+        generate_tests!(1, 2, 3, 4, 5, 6, 7, 8);
     };
     ($($dim:literal),*) => {
         $(
@@ -291,7 +291,9 @@ macro_rules! generate_tests {
                 ($dim, 3),
                 ($dim, 4),
                 ($dim, 5),
-                ($dim, 6)
+                ($dim, 6),
+                ($dim, 7),
+                ($dim, 8)
             );
         )*
     };
