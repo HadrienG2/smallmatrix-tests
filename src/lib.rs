@@ -511,7 +511,9 @@ impl<const LEFT_ROWS: usize, const LEFT_COLS: usize, const RIGHT_COLS: usize>
 impl<const ROWS: usize, const COLS: usize> MulAssign<SquareMatrix<COLS>> for Matrix<ROWS, COLS> {
     fn mul_assign(&mut self, rhs: SquareMatrix<COLS>) {
         // Cannot optimize in-place product beyond this because each column of
-        // the destination matrix uses every column from the source matrix
+        // the destination matrix uses every column from the source matrix, so
+        // we can only start updating source columns once we're done computing
+        // the entire matrix product
         *self = self.clone() * rhs;
     }
 }
