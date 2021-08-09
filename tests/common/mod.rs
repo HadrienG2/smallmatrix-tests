@@ -3,6 +3,7 @@ use simd_tests::{Matrix, Scalar};
 use std::panic::UnwindSafe;
 
 /// Assert that a certain functor panics
+#[allow(unused)]
 pub fn assert_panics<F: FnOnce() -> R + UnwindSafe + 'static, R>(f: F) {
     // Code bloat optimization
     fn polymorphic_impl(f: Box<dyn FnOnce() + UnwindSafe>) {
