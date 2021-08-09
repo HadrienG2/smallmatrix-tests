@@ -14,6 +14,7 @@ pub fn assert_panics<F: FnOnce() -> R + UnwindSafe + 'static, R>(f: F) {
 }
 
 // Function signature asserts that the matrix type is the same
+#[allow(unused)]
 pub fn assert_bits_eq<const ROWS: usize, const COLS: usize>(
     expected: Matrix<ROWS, COLS>,
     result: Matrix<ROWS, COLS>,

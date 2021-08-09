@@ -706,3 +706,85 @@ impl<const DIM: usize> SquareMatrix<DIM> {
 // TODO: Linear solver, Gram-Schmidt, eigenvalues and eigenvectors...
 // TODO: Special matrices (diagonal, tridiagonal, upper/lower triangular,
 //       symmetric, hermitic) and unit vectors, with specialized handling.
+
+// Indexing tests are implemented as a unit test because they must have access
+// to the implementation. An implementation in terms of the elements iterator
+// would also be possible, but then the indexing and iterator test would
+// mutually rely on their test subject's correctness
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use paste::paste;
+    use quickcheck_macros::quickcheck;
+
+    fn test_index_mat<const ROWS: usize, const COLS: usize>(
+        mut mat: Matrix<ROWS, COLS>,
+        row: usize,
+        col: usize,
+    ) {
+        if row >= ROWS || col >= COLS {
+            assert!(std::panic::catch_unwind(move || &mat[(row, col)] as *const _).is_err());
+            assert!(std::panic::catch_unwind(move || &mut mat[(row, col)] as *mut _).is_err());
+        } else {
+            assert_eq!(
+                &mat.0[col][row] as *const Scalar,
+                &mat[(row, col)] as *const Scalar
+            );
+            assert_eq!(
+                &mut mat.0[col][row] as *mut Scalar,
+                &mut mat[(row, col)] as *mut Scalar
+            );
+        }
+    }
+
+    fn test_index_vec<const DIM: usize>(mut vec: ColVector<DIM>, idx: usize) {
+        if idx >= DIM {
+            assert!(std::panic::catch_unwind(move || &vec[idx] as *const _).is_err());
+            assert!(std::panic::catch_unwind(move || &mut vec[idx] as *mut _).is_err());
+        } else {
+            assert_eq!(&vec.0[0][idx] as *const Scalar, &vec[idx] as *const Scalar);
+            assert_eq!(
+                &mut vec.0[0][idx] as *mut Scalar,
+                &mut vec[idx] as *mut Scalar
+            );
+        }
+    }
+
+    macro_rules! generate_tests {
+    () => {
+        generate_tests!(1, 2, 3, 4, 5, 6, 7, 8);
+    };
+        ($($dim:literal),*) => {
+            $(
+                paste! {
+                    #[quickcheck]
+                    fn [< index_vec $dim >](vec: ColVector<$dim>, idx: usize) {
+                        test_index_vec::<$dim>(vec, idx);
+                    }
+                }
+
+                generate_tests!(
+                    ($dim, 1),
+                    ($dim, 2),
+                    ($dim, 3),
+                    ($dim, 4),
+                    ($dim, 5),
+                    ($dim, 6),
+                    ($dim, 7),
+                    ($dim, 8)
+                );
+            )*
+        };
+        ($(($dim1:literal, $dim2:literal)),*) => {
+            $(
+                paste! {
+                    #[quickcheck]
+                    fn [< index_mat $dim1 x $dim2 >](mat: Matrix<$dim1, $dim2>, row: usize, col: usize) {
+                        test_index_mat::<$dim1, $dim2>(mat, row, col);
+                    }
+                }
+            )*
+        }
+    }
+    generate_tests!();
+}
