@@ -34,18 +34,30 @@ fn test_matmul_assign<const LEFT_ROWS: usize, const LEFT_COLS: usize>(
     assert_close_matrix(expected, lhs, expected.norm());
 }
 
-fn test_product<const DIM: usize>(mats: Vec<SquareMatrix<DIM>>) {
-    let expected = mats
-        .iter()
-        .copied()
-        .fold(SquareMatrix::<DIM>::one(), |acc, mat| acc * mat);
-    assert_close_matrix(expected, mats.into_iter().product(), expected.norm());
+fn test_product<const DIM: usize>(mats: Vec<SquareMatrix<DIM>>) -> TestResult {
+    // Keep input size reasonable in debug builds
+    if cfg!(debug_assertions) && mats.len() > 16 {
+        TestResult::discard()
+    } else {
+        let expected = mats
+            .iter()
+            .copied()
+            .fold(SquareMatrix::<DIM>::one(), |acc, mat| acc * mat);
+        assert_close_matrix(expected, mats.into_iter().product(), expected.norm());
+        TestResult::passed()
+    }
 }
 
-pub fn test_pow<const DIM: usize>(mut lhs: SquareMatrix<DIM>, rhs: u8) {
-    lhs /= lhs.norm();
-    let expected = std::iter::repeat(lhs).take(rhs as _).product();
-    assert_close_matrix(expected, lhs.pow(rhs), expected.norm());
+pub fn test_pow<const DIM: usize>(mut lhs: SquareMatrix<DIM>, rhs: u8) -> TestResult {
+    // Naive pow diverges from exponentiation by squaring (for the worse) at higher powers
+    if rhs > 16 {
+        return TestResult::discard();
+    } else {
+        lhs /= lhs.norm();
+        let expected = std::iter::repeat(lhs).take(rhs as _).product();
+        assert_close_matrix(expected, lhs.pow(rhs), expected.norm());
+        TestResult::passed()
+    }
 }
 
 macro_rules! generate_tests {
@@ -56,12 +68,12 @@ macro_rules! generate_tests {
         $(
             paste! {
                 #[quickcheck]
-                fn [< product $dim x $dim >](mats: Vec<SquareMatrix<$dim>>) {
+                fn [< product $dim x $dim >](mats: Vec<SquareMatrix<$dim>>) -> TestResult {
                     test_product::<$dim>(mats)
                 }
 
                 #[quickcheck]
-                fn [< pow $dim x $dim >](lhs: SquareMatrix<$dim>, rhs: u8) {
+                fn [< pow $dim x $dim >](lhs: SquareMatrix<$dim>, rhs: u8) -> TestResult {
                     test_pow::<$dim>(lhs, rhs)
                 }
             }

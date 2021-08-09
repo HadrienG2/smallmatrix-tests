@@ -14,16 +14,7 @@ fn test_clone<const ROWS: usize, const COLS: usize>(mat: Matrix<ROWS, COLS>) {
     assert_bits_eq(expected, mat.clone());
 }
 
-fn test_partial_eq<const ROWS: usize, const COLS: usize>(
-    mat1: Matrix<ROWS, COLS>,
-    mat2: Matrix<ROWS, COLS>,
-) {
-    let expected = mat1
-        .into_col_major_elems()
-        .zip(mat2.into_col_major_elems())
-        .all(|(x, y)| x == y);
-    assert_eq!(expected, mat1 == mat2);
-}
+// NOTE: PartialEq has been split into the separate "ops" test
 
 #[quickcheck]
 fn scalar_1x1_conv(x: Scalar) {
@@ -71,57 +62,7 @@ fn test_one<const DIM: usize>() {
     assert_bits_eq(SquareMatrix::<DIM>::identity(), SquareMatrix::<DIM>::one());
 }
 
-fn test_from_col_major_elems<const ROWS: usize, const COLS: usize>(elems: Vec<Scalar>) {
-    if elems.len() == ROWS * COLS {
-        // Assert return type is right
-        let mat: Matrix<ROWS, COLS> =
-            Matrix::<ROWS, COLS>::from_col_major_elems(elems.iter().copied());
-        for (src, dest) in elems.into_iter().zip(mat.into_col_major_elems()) {
-            assert_eq!(src.to_bits(), dest.to_bits());
-        }
-    } else {
-        assert_panics(move || Matrix::<ROWS, COLS>::from_col_major_elems(elems.into_iter()));
-    }
-}
-
-fn test_into_col_major_elems<const ROWS: usize, const COLS: usize>(mat: Matrix<ROWS, COLS>) {
-    assert_eq!(mat.into_col_major_elems().count(), ROWS * COLS);
-    for (idx, dest) in mat.into_col_major_elems().enumerate() {
-        let (col, row) = (idx / ROWS, idx % ROWS);
-        let src = mat[(row, col)];
-        assert_eq!(src.to_bits(), dest.to_bits());
-    }
-}
-
-fn test_col_major_elems<const ROWS: usize, const COLS: usize>(mat: Matrix<ROWS, COLS>) {
-    assert_eq!(mat.col_major_elems().count(), ROWS * COLS);
-    for (idx, dest_ref) in mat.col_major_elems().enumerate() {
-        let (col, row) = (idx / ROWS, idx % ROWS);
-        assert_eq!(&mat[(row, col)] as *const Scalar, dest_ref as *const Scalar);
-    }
-}
-
-fn test_col_major_elems_mut<const ROWS: usize, const COLS: usize>(mut mat: Matrix<ROWS, COLS>) {
-    assert_eq!(mat.col_major_elems_mut().count(), ROWS * COLS);
-    let ptrs = mat
-        .col_major_elems_mut()
-        .map(|refmut| refmut as *mut Scalar)
-        .collect::<Vec<_>>();
-    for (idx, ptr) in ptrs.into_iter().enumerate() {
-        let (col, row) = (idx / ROWS, idx % ROWS);
-        assert_eq!(&mut mat[(row, col)] as *mut Scalar, ptr);
-    }
-}
-
-fn test_col_iterator<const ROWS: usize, const COLS: usize>(mat: Matrix<ROWS, COLS>) {
-    assert_eq!(mat.into_iter().count(), COLS);
-    for (idx, col_vec) in mat.into_iter().enumerate() {
-        let expected = mat.col(idx);
-        assert_bits_eq(expected, col_vec);
-    }
-    assert_bits_eq(mat, Matrix::<ROWS, COLS>::from_iter(mat.into_iter()));
-}
-
+// NOTE: Iterators have been split into the separate "iter" test
 // NOTE: Matrix concatenation has been split into the separate "concat" test
 // NOTE: Index operator is tested as a unit test because the test needs access
 //       to the implementation, to avoid being a synonym of col-major iter tests
@@ -140,65 +81,7 @@ fn test_transpose<const ROWS: usize, const COLS: usize>(mat: Matrix<ROWS, COLS>)
     }
 }
 
-fn test_neg<const ROWS: usize, const COLS: usize>(mat: Matrix<ROWS, COLS>) {
-    let expected =
-        Matrix::<ROWS, COLS>::from_col_major_elems(mat.into_col_major_elems().map(|x| -x));
-    assert_bits_eq(expected, -mat);
-}
-
-fn test_mul_scalar<const ROWS: usize, const COLS: usize>(mut mat: Matrix<ROWS, COLS>, x: Scalar) {
-    let expected =
-        Matrix::<ROWS, COLS>::from_col_major_elems(mat.into_col_major_elems().map(|elem| elem * x));
-    assert_bits_eq(expected, mat * x);
-    assert_bits_eq(expected, x * mat);
-    mat *= x;
-    assert_bits_eq(expected, mat);
-}
-
-fn test_div_scalar<const ROWS: usize, const COLS: usize>(mut lhs: Matrix<ROWS, COLS>, rhs: Scalar) {
-    let expected =
-        Matrix::<ROWS, COLS>::from_col_major_elems(lhs.into_col_major_elems().map(|lhs| lhs / rhs));
-    assert_bits_eq(expected, lhs / rhs);
-    lhs /= rhs;
-    assert_bits_eq(expected, lhs);
-}
-
-fn test_add<const ROWS: usize, const COLS: usize>(
-    mut lhs: Matrix<ROWS, COLS>,
-    rhs: Matrix<ROWS, COLS>,
-) {
-    let expected = Matrix::<ROWS, COLS>::from_col_major_elems(
-        lhs.into_col_major_elems()
-            .zip(rhs.into_col_major_elems())
-            .map(|(x, y)| x + y),
-    );
-    assert_bits_eq(expected, lhs + rhs);
-    lhs += rhs;
-    assert_bits_eq(expected, lhs);
-}
-
-fn test_sum<const ROWS: usize, const COLS: usize>(mats: Vec<Matrix<ROWS, COLS>>) {
-    let expected = mats
-        .iter()
-        .copied()
-        .fold(Matrix::<ROWS, COLS>::zero(), |acc, mat| acc + mat);
-    assert_close_matrix(expected, mats.into_iter().sum(), expected.norm());
-}
-
-fn test_sub<const ROWS: usize, const COLS: usize>(
-    mut lhs: Matrix<ROWS, COLS>,
-    rhs: Matrix<ROWS, COLS>,
-) {
-    let expected = Matrix::<ROWS, COLS>::from_col_major_elems(
-        lhs.into_col_major_elems()
-            .zip(rhs.into_col_major_elems())
-            .map(|(x, y)| x - y),
-    );
-    assert_bits_eq(expected, lhs - rhs);
-    lhs -= rhs;
-    assert_bits_eq(expected, lhs);
-}
-
+// NOTE: Arithmetic operators have been split out into the separate "ops" test
 // NOTE: Matrix multiplication-like operations have been split into the separate
 //       "matmul" test
 
@@ -303,10 +186,6 @@ macro_rules! generate_tests {
                 fn [< clone $dim1 x $dim2 >](mat: Matrix<$dim1, $dim2>) {
                     test_clone::<$dim1, $dim2>(mat);
                 }
-                #[quickcheck]
-                fn [< partial_eq $dim1 x $dim2 >](mat1: Matrix<$dim1, $dim2>, mat2: Matrix<$dim1, $dim2>) {
-                    test_partial_eq::<$dim1, $dim2>(mat1, mat2);
-                }
 
                 #[test]
                 fn [< default $dim1 x $dim2 >]() {
@@ -319,63 +198,8 @@ macro_rules! generate_tests {
                 }
 
                 #[quickcheck]
-                fn [< from_col_major_elems_ $dim1 x $dim2 >](elems: Vec<Scalar>) {
-                    test_from_col_major_elems::<$dim1, $dim2>(elems);
-                }
-
-                #[quickcheck]
-                fn [< into_col_major_elems_ $dim1 x $dim2 >](mat: Matrix<$dim1, $dim2>) {
-                    test_into_col_major_elems::<$dim1, $dim2>(mat);
-                }
-
-                #[quickcheck]
-                fn [< col_major_elems_ $dim1 x $dim2 >](mat: Matrix<$dim1, $dim2>) {
-                    test_col_major_elems::<$dim1, $dim2>(mat);
-                }
-
-                #[quickcheck]
-                fn [< col_major_elems_mut_ $dim1 x $dim2 >](mat: Matrix<$dim1, $dim2>) {
-                    test_col_major_elems_mut::<$dim1, $dim2>(mat);
-                }
-
-                #[quickcheck]
-                fn [< col_iterator $dim1 x $dim2 >](mat: Matrix<$dim1, $dim2>) {
-                    test_col_iterator::<$dim1, $dim2>(mat);
-                }
-
-                #[quickcheck]
                 fn [< transpose $dim1 x $dim2 >](mat: Matrix<$dim1, $dim2>) {
                     test_transpose::<$dim1, $dim2>(mat)
-                }
-
-                #[quickcheck]
-                fn [< neg $dim1 x $dim2 >](mat: Matrix<$dim1, $dim2>) {
-                    test_neg::<$dim1, $dim2>(mat)
-                }
-
-                #[quickcheck]
-                fn [< mul_scalar $dim1 x $dim2 >](mat: Matrix<$dim1, $dim2>, x: Scalar) {
-                    test_mul_scalar::<$dim1, $dim2>(mat, x);
-                }
-
-                #[quickcheck]
-                fn [< div_scalar $dim1 x $dim2 >](lhs: Matrix<$dim1, $dim2>, rhs: Scalar) {
-                    test_div_scalar::<$dim1, $dim2>(lhs, rhs);
-                }
-
-                #[quickcheck]
-                fn [< add $dim1 x $dim2 >](lhs: Matrix<$dim1, $dim2>, rhs: Matrix<$dim1, $dim2>) {
-                    test_add::<$dim1, $dim2>(lhs, rhs);
-                }
-
-                #[quickcheck]
-                fn [< sum $dim1 x $dim2 >](mats: Vec<Matrix<$dim1, $dim2>>) {
-                    test_sum::<$dim1, $dim2>(mats);
-                }
-
-                #[quickcheck]
-                fn [< sub $dim1 x $dim2 >](lhs: Matrix<$dim1, $dim2>, rhs: Matrix<$dim1, $dim2>) {
-                    test_sub::<$dim1, $dim2>(lhs, rhs);
                 }
 
                 #[quickcheck]
