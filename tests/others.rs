@@ -199,9 +199,39 @@ fn test_sub<const ROWS: usize, const COLS: usize>(
     assert_bits_eq(expected, lhs);
 }
 
-// TODO: Test matmul + mulassign
-// TODO: Test Product
-// TODO: Test Pow
+fn test_matmul<const LEFT_ROWS: usize, const LEFT_COLS: usize, const RIGHT_COLS: usize>(
+    lhs: Matrix<LEFT_ROWS, LEFT_COLS>,
+    rhs: Matrix<LEFT_COLS, RIGHT_COLS>,
+) {
+    let expected = Matrix::<LEFT_ROWS, RIGHT_COLS>::from_col_major_elems(
+        (0..LEFT_ROWS * RIGHT_COLS)
+            .map(|idx| (idx / LEFT_ROWS, idx % LEFT_ROWS))
+            .map(|(col, row)| (lhs.row(row) * rhs.col(col)).into()),
+    );
+    assert_close_matrix(expected, lhs * rhs, expected.norm());
+}
+
+fn test_matmul_assign<const LEFT_ROWS: usize, const LEFT_COLS: usize>(
+    mut lhs: Matrix<LEFT_ROWS, LEFT_COLS>,
+    rhs: SquareMatrix<LEFT_COLS>,
+) {
+    let expected = lhs * rhs;
+    lhs *= rhs;
+    assert_close_matrix(expected, lhs, expected.norm());
+}
+
+fn test_product<const DIM: usize>(mats: Vec<SquareMatrix<DIM>>) {
+    let expected = mats
+        .iter()
+        .copied()
+        .fold(SquareMatrix::<DIM>::one(), |acc, mat| acc * mat);
+    assert_close_matrix(expected, mats.into_iter().product(), expected.norm());
+}
+
+pub fn test_pow<const DIM: usize>(lhs: SquareMatrix<DIM>, rhs: u8) {
+    let expected = std::iter::repeat(lhs).take(rhs as _).product();
+    assert_close_matrix(expected, lhs.pow(rhs), expected.norm());
+}
 
 fn test_dot<const ROWS: usize, const COLS: usize>(
     lhs: Matrix<ROWS, COLS>,
@@ -280,7 +310,17 @@ macro_rules! generate_tests {
                 }
 
                 #[quickcheck]
-                fn [< trace $dim >](mat: SquareMatrix<$dim>) {
+                fn [< product $dim x $dim >](mats: Vec<SquareMatrix<$dim>>) {
+                    test_product::<$dim>(mats);
+                }
+
+                #[quickcheck]
+                fn [< pow $dim x $dim >](lhs: SquareMatrix<$dim>, rhs: u8) {
+                    test_pow::<$dim>(lhs, rhs);
+                }
+
+                #[quickcheck]
+                fn [< trace $dim x $dim >](mat: SquareMatrix<$dim>) {
                     test_trace::<$dim>(mat);
                 }
             }
@@ -380,6 +420,11 @@ macro_rules! generate_tests {
                 }
 
                 #[quickcheck]
+                fn [< matmul_assign_ $dim1 x $dim2 >](lhs: Matrix<$dim1, $dim2>, rhs: Matrix<$dim2, $dim2>) {
+                    test_matmul_assign::<$dim1, $dim2>(lhs, rhs);
+                }
+
+                #[quickcheck]
                 fn [< dot $dim1 x $dim2 >](lhs: Matrix<$dim1, $dim2>, rhs: Matrix<$dim1, $dim2>) {
                     test_dot::<$dim1, $dim2>(lhs, rhs);
                 }
@@ -392,6 +437,27 @@ macro_rules! generate_tests {
                 #[quickcheck]
                 fn [< norm $dim1 x $dim2 >](mat: Matrix<$dim1, $dim2>) {
                     test_norm::<$dim1, $dim2>(mat);
+                }
+            }
+
+            generate_tests!(
+                ($dim1, $dim2, 1),
+                ($dim1, $dim2, 2),
+                ($dim1, $dim2, 3),
+                ($dim1, $dim2, 4),
+                ($dim1, $dim2, 5),
+                ($dim1, $dim2, 6),
+                ($dim1, $dim2, 7),
+                ($dim1, $dim2, 8)
+            );
+        )*
+    };
+    ($(($dim1:literal, $dim2:literal, $dim3:literal)),*) => {
+        $(
+            paste! {
+                #[quickcheck]
+                fn [< matmul_ $dim1 x $dim2 _by_ $dim2 x $dim3 >](lhs: Matrix<$dim1, $dim2>, rhs: Matrix<$dim2, $dim3>) {
+                    test_matmul::<$dim1, $dim2, $dim3>(lhs, rhs);
                 }
             }
         )*
