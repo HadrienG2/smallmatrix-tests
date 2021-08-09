@@ -753,9 +753,9 @@ mod tests {
     }
 
     macro_rules! generate_tests {
-    () => {
-        generate_tests!(1, 2, 3, 4, 5, 6, 7, 8);
-    };
+        () => {
+            generate_tests!(1, 2, 3, 4, 5, 6, 7, 8);
+        };
         ($($dim:literal),*) => {
             $(
                 paste! {

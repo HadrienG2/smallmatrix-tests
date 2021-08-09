@@ -1,18 +1,7 @@
-#![feature(bench_black_box)]
-
-use criterion::{criterion_group, criterion_main, Criterion, Throughput};
-use paste::paste;
-use rand::Fill;
-use simd_tests::{Scalar, ANTISYM8, FINITE_DIFF, SHARPEN3, SMOOTH5, WIDEST};
-
-#[derive(Debug)]
-enum CacheLevel {
-    L1,
-    L2,
-    LocalL3,
-    RemoteL3,
-    DRAM,
-}
+use criterion::{black_box, criterion_group, criterion_main, Criterion, Throughput};
+use more_asserts::*;
+use rand::prelude::*;
+use simd_tests::{Scalar, SquareMatrix, Vector};
 
 #[derive(Debug)]
 enum FigureOfMerit {
@@ -24,10 +13,6 @@ enum FigureOfMerit {
 
 fn criterion_benchmark(c: &mut Criterion) {
     let mut rng = rand::thread_rng();
-    const L1_CAPACITY: usize = 32 * 1024 / std::mem::size_of::<Scalar>();
-    const L2_CAPACITY: usize = 512 * 1024 / std::mem::size_of::<Scalar>();
-    const L3_CCX_CAPACITY: usize = 4 * 1024 * 1024 / std::mem::size_of::<Scalar>();
-    const L3_TOTAL_CAPACITY: usize = 2 * L3_CCX_CAPACITY;
     for figure_of_merit in [
         FigureOfMerit::InputBytes,
         FigureOfMerit::OutputBytes,
@@ -35,70 +20,51 @@ fn criterion_benchmark(c: &mut Criterion) {
         FigureOfMerit::Adds,
     ] {
         let mut group = c.benchmark_group(format!("{:?}", figure_of_merit));
-        for cache_level in [
-            CacheLevel::L1,
-            /*CacheLevel::L2,
-            CacheLevel::LocalL3,
-            CacheLevel::RemoteL3,
-            CacheLevel::DRAM,*/
-        ] {
-            // Select input/output size to match a certain CPU cache level
-            let input_len = match cache_level {
-                CacheLevel::L1 => L1_CAPACITY / 4,
-                CacheLevel::L2 => (L2_CAPACITY + L1_CAPACITY) / 4,
-                CacheLevel::LocalL3 => (L2_CAPACITY + L3_CCX_CAPACITY) / 4,
-                CacheLevel::RemoteL3 => (L3_CCX_CAPACITY + L3_TOTAL_CAPACITY) / 4,
-                CacheLevel::DRAM => 2 * L3_TOTAL_CAPACITY,
-            };
+        // Measure throughput as bytes of input processed per second
+        macro_rules! generate_benchmarks {
+            () => { generate_benchmarks!(1, 2, 3, 4, 5, 6, 7, 8); };
+            ($($dim:literal),*) => {
+                $(
+                    // FIXME: Specific to Vector<$dim>::unit", generalize to other ops
+                    let output_bytes = std::mem::size_of::<Vector<$dim>>();
+                    let input_bytes = std::mem::size_of::<usize>();
+                    let num_muls = 0;
+                    let num_adds = 0;
 
-            // Measure throughput as bytes of input processed per second
-            macro_rules! generate_benchmarks {
-                ($impl:ident) => {
-                    generate_benchmarks!($impl, SSE);
-                    generate_benchmarks!($impl, AVX);
-                    // generate_benchmarks!($impl, AVX512);
-                };
-                ($impl:ident, $width:ident) => {
-                    generate_benchmarks!($impl, $width, FINITE_DIFF);
-                    generate_benchmarks!($impl, $width, SHARPEN3);
-                    generate_benchmarks!($impl, $width, SMOOTH5);
-                    generate_benchmarks!($impl, $width, ANTISYM8);
-                };
-                ($impl:ident, $width:ident, $kernel:ident) => {
-                    generate_benchmarks!($impl, $width, $kernel, false, basic);
-                    generate_benchmarks!($impl, $width, $kernel, true, smart);
-                };
-                ($impl:ident, $width:ident, $kernel:ident, $smart:expr, $suffix:ident) => {
-                    let output_elems = input_len - $kernel.len() + 1;
-                    let output_bytes = output_elems * std::mem::size_of::<Scalar>();
-                    let input_bytes = output_bytes * $kernel.len();
-                    let num_muls = output_elems * $kernel.len();
-                    let num_adds = num_muls - output_elems;
                     match figure_of_merit {
-                        FigureOfMerit::OutputBytes => group.throughput(Throughput::Bytes(output_bytes as _)),
-                        FigureOfMerit::InputBytes => group.throughput(Throughput::Bytes(input_bytes as _)),
-                        FigureOfMerit::Muls => group.throughput(Throughput::Elements(num_muls as _)),
-                        FigureOfMerit::Adds => group.throughput(Throughput::Elements(num_adds as _)),
-                    };
-                    let mut input = simd_tests::allocate_simd(input_len);
-                    let scalar_input = simd_tests::scalarize_mut(&mut input);
-                    scalar_input.try_fill(&mut rng).unwrap();
-                    let mut output = simd_tests::allocate_simd(output_elems);
-                    paste!{
-                        group.bench_function(&format!("{:?} cache, {} kernel, {} impl, {} sum, {} vectorization", cache_level, stringify!([<$kernel:lower>]), stringify!($impl), stringify!($suffix), stringify!([<$width:lower>])),
-                            |b| {
-                                b.iter(|| simd_tests::[<$kernel:lower _ $impl _ $suffix _ $width:lower>](std::hint::black_box(&input), &mut output));
-                                std::hint::black_box(&mut output);
+                        FigureOfMerit::OutputBytes => {
+                            assert_gt!(output_bytes, 0);
+                            group.throughput(Throughput::Bytes(output_bytes as _));
+                        }
+                        FigureOfMerit::InputBytes => {
+                            if input_bytes == 0 {
+                                continue;
+                            } else {
+                                group.throughput(Throughput::Bytes(input_bytes as _));
                             }
-                        );
-                    }
-                }
+                        }
+                        FigureOfMerit::Muls => {
+                            if num_muls == 0 {
+                                continue;
+                            } else {
+                                group.throughput(Throughput::Elements(num_muls as _));
+                            }
+                        }
+                        FigureOfMerit::Adds => {
+                            if num_adds == 0 {
+                                group.throughput(Throughput::Elements(num_adds as _));
+                            }
+                        }
+                    };
+
+                    let input = rng.gen_range(0..$dim);
+                    group.bench_function(&format!("Vector<{}>::unit()", $dim),
+                        |b| { b.iter(|| Vector::<$dim>::unit(black_box(input))) }
+                    );
+                )*
             }
-            generate_benchmarks!(autovec, WIDEST);
-            generate_benchmarks!(manual, WIDEST);
-            generate_benchmarks!(shuf2_loadu, WIDEST);
-            generate_benchmarks!(minimal_loads, WIDEST);
         }
+        generate_benchmarks!();
     }
 }
 
