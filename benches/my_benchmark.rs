@@ -1,14 +1,56 @@
-use criterion::{black_box, criterion_group, criterion_main, Criterion, Throughput};
+use criterion::{
+    black_box, criterion_group, criterion_main, measurement::Measurement, BenchmarkGroup,
+    Criterion, Throughput,
+};
 use more_asserts::*;
 use rand::prelude::*;
-use simd_tests::{SquareMatrix, Vector};
+use simd_tests::{Scalar, SquareMatrix, Vector};
 
-#[derive(Debug)]
+#[derive(Copy, Clone, Debug)]
 enum FigureOfMerit {
     InputBytes,
     OutputBytes,
     Muls,
     Adds,
+}
+
+fn benchmark_impl<Inputs: Clone, Output, M: Measurement>(
+    group: &mut BenchmarkGroup<M>,
+    figure_of_merit: FigureOfMerit,
+    num_muls: usize,
+    num_adds: usize,
+    mut function: impl FnMut(Inputs) -> Output,
+    inputs: Inputs,
+    name: &str,
+) {
+    let output_bytes = std::mem::size_of::<Output>();
+    let input_bytes = std::mem::size_of::<Inputs>();
+    match figure_of_merit {
+        FigureOfMerit::OutputBytes => {
+            assert_gt!(output_bytes, 0);
+            group.throughput(Throughput::Bytes(output_bytes as _));
+        }
+        FigureOfMerit::InputBytes => {
+            if input_bytes == 0 {
+                return;
+            } else {
+                group.throughput(Throughput::Bytes(input_bytes as _));
+            }
+        }
+        FigureOfMerit::Muls => {
+            if num_muls == 0 {
+                return;
+            } else {
+                group.throughput(Throughput::Elements(num_muls as _));
+            }
+        }
+        FigureOfMerit::Adds => {
+            if num_adds == 0 {
+                group.throughput(Throughput::Elements(num_adds as _));
+            }
+        }
+    };
+    group.bench_function(name, |b| b.iter(|| function(black_box(inputs.clone()))));
 }
 
 fn criterion_benchmark(c: &mut Criterion) {
@@ -20,47 +62,78 @@ fn criterion_benchmark(c: &mut Criterion) {
         FigureOfMerit::Adds,
     ] {
         let mut group = c.benchmark_group(format!("{:?}", figure_of_merit));
-        // Measure throughput as bytes of input processed per second
+        macro_rules! benchmark {
+            ($num_muls:expr, $num_adds:expr, $function:path $(, $input:ident)*) => {
+                #[allow(unused_parens)]
+                benchmark_impl(
+                    &mut group,
+                    figure_of_merit,
+                    $num_muls,
+                    $num_adds,
+                    |($($input),*)| $function($($input),*),
+                    ($($input),*),
+                    stringify!($function)
+                );
+            };
+        }
         macro_rules! generate_benchmarks {
             () => { generate_benchmarks!(1, 2, 3, 4, 5, 6, 7, 8); };
             ($($dim:literal),*) => {
                 $(
-                    // FIXME: Specific to Vector<$dim>::unit", generalize to other ops
-                    let output_bytes = std::mem::size_of::<Vector<$dim>>();
-                    let input_bytes = std::mem::size_of::<usize>();
-                    let num_muls = 0;
-                    let num_adds = 0;
+                    // FIXME: Find a way to split this across multiple
+                    //        compilation units
+                    // FIXME: Iterate over benchmarks, then over dimensions
 
-                    match figure_of_merit {
-                        FigureOfMerit::OutputBytes => {
-                            assert_gt!(output_bytes, 0);
-                            group.throughput(Throughput::Bytes(output_bytes as _));
-                        }
-                        FigureOfMerit::InputBytes => {
-                            if input_bytes == 0 {
-                                continue;
-                            } else {
-                                group.throughput(Throughput::Bytes(input_bytes as _));
-                            }
-                        }
-                        FigureOfMerit::Muls => {
-                            if num_muls == 0 {
-                                continue;
-                            } else {
-                                group.throughput(Throughput::Elements(num_muls as _));
-                            }
-                        }
-                        FigureOfMerit::Adds => {
-                            if num_adds == 0 {
-                                group.throughput(Throughput::Elements(num_adds as _));
-                            }
-                        }
-                    };
+                    let dim_idx = rng.gen_range(0..$dim);
+                    benchmark!(0, 0, Vector::<$dim>::unit, dim_idx);
 
-                    let input = rng.gen_range(0..$dim);
-                    group.bench_function(&format!("Vector<{}>::unit()", $dim),
-                        |b| { b.iter(|| Vector::<$dim>::unit(black_box(input))) }
-                    );
+                    benchmark!(0, 0, SquareMatrix::<$dim>::identity);
+
+                    let vec_elems = rng.gen::<[Scalar; $dim]>().into_iter();
+                    benchmark!(0, 0, Vector::<$dim>::from_col_major_elems, vec_elems);
+
+                    let mat_elems = rng.gen::<[Scalar; $dim * $dim]>().into_iter();
+                    benchmark!(0, 0, SquareMatrix::<$dim>::from_col_major_elems, mat_elems);
+
+                    let v1 = rng.gen::<Vector<$dim>>();
+                    let v2 = rng.gen::<Vector<$dim>>();
+                    benchmark!(0, 0, Vector::<$dim>::cat, v1, v2);
+
+                    let m1 = rng.gen::<SquareMatrix<$dim>>();
+                    let m2 = rng.gen::<SquareMatrix<$dim>>();
+                    benchmark!(0, 0, SquareMatrix::<$dim>::hcat, m1, m2);
+                    benchmark!(0, 0, SquareMatrix::<$dim>::vcat, m1, m2);
+
+                    // TODO: Benchmark a number of blocks
+
+                    benchmark!(0, 0, Vector::<$dim>::transpose, v1);
+                    benchmark!(0, 0, SquareMatrix::<$dim>::transpose, m1);
+
+                    // TODO: Benchmark a number of matrix powers
+
+                    benchmark!($dim, $dim-1, Vector::<$dim>::dot, v1, v2);
+                    benchmark!($dim * $dim, $dim * $dim - 1, SquareMatrix::<$dim>::dot, m1, m2);
+
+                    benchmark!($dim, $dim-1, Vector::<$dim>::squared_norm, v1);
+                    benchmark!($dim, $dim-1, Vector::<$dim>::norm, v1);
+                    benchmark!($dim * $dim, $dim * $dim - 1, SquareMatrix::<$dim>::squared_norm, m1);
+                    benchmark!($dim * $dim, $dim * $dim - 1, SquareMatrix::<$dim>::norm, m1);
+
+                    if $dim == 3 {
+                        let v3_1 = rng.gen::<Vector<3>>();
+                        let v3_2 = rng.gen::<Vector<3>>();
+                        benchmark!(6, 3, Vector::<3>::cross, v3_1, v3_2);
+                    }
+
+                    benchmark!(0, $dim - 1, SquareMatrix::<$dim>::trace, m1);
+
+                    // NOTE: Number of ops for det/inverse is strongly
+                    //       implementation-dependent, so better act as if we
+                    //       didn't know it.
+                    benchmark!(0, 0, SquareMatrix::<$dim>::det, m1);
+                    benchmark!(0, 0, SquareMatrix::<$dim>::inverse, m1);
+
+                    // TODO: Add more ops, those that go by traits
                 )*
             }
         }

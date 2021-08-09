@@ -532,6 +532,7 @@ impl<RHS: Into<usize>, const DIM: usize> Pow<RHS> for SquareMatrix<DIM> {
 }
 //
 impl<const DIM: usize> SquareMatrix<DIM> {
+    /// Raise a square matrix to an integer power
     pub fn pow<RHS: Into<usize>>(self, rhs: RHS) -> Self {
         <Self as Pow<RHS>>::pow(self, rhs)
     }
