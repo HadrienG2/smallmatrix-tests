@@ -1,7 +1,7 @@
 use criterion::{black_box, criterion_group, criterion_main, Criterion, Throughput};
 use more_asserts::*;
 use rand::prelude::*;
-use simd_tests::{Scalar, SquareMatrix, Vector};
+use simd_tests::{SquareMatrix, Vector};
 
 #[derive(Debug)]
 enum FigureOfMerit {
