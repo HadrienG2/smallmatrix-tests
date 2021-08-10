@@ -91,9 +91,6 @@ fn criterion_benchmark(c: &mut Criterion) {
 
                     benchmark!(0, 0, SquareMatrix::<$dim>::identity);
 
-                    let vec_elems = rng.gen::<[Scalar; $dim]>().into_iter();
-                    benchmark!(0, 0, Vector::<$dim>::from_col_major_elems, vec_elems);
-
                     let mat_elems = rng.gen::<[Scalar; $dim * $dim]>().into_iter();
                     benchmark!(0, 0, SquareMatrix::<$dim>::from_col_major_elems, mat_elems);
 
@@ -108,18 +105,13 @@ fn criterion_benchmark(c: &mut Criterion) {
 
                     // TODO: Benchmark a number of blocks
 
-                    benchmark!(0, 0, Vector::<$dim>::transpose, v1);
                     benchmark!(0, 0, SquareMatrix::<$dim>::transpose, m1);
 
                     // TODO: Benchmark a number of matrix powers
 
                     benchmark!($dim, $dim-1, Vector::<$dim>::dot, v1, v2);
-                    benchmark!($dim * $dim, $dim * $dim - 1, SquareMatrix::<$dim>::dot, m1, m2);
-
                     benchmark!($dim, $dim-1, Vector::<$dim>::squared_norm, v1);
                     benchmark!($dim, $dim-1, Vector::<$dim>::norm, v1);
-                    benchmark!($dim * $dim, $dim * $dim - 1, SquareMatrix::<$dim>::squared_norm, m1);
-                    benchmark!($dim * $dim, $dim * $dim - 1, SquareMatrix::<$dim>::norm, m1);
 
                     if $dim == 3 {
                         let v3_1 = rng.gen::<Vector<3>>();
