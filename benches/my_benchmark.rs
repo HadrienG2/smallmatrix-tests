@@ -48,6 +48,24 @@ macro_rules! impl_call_with {
 //
 impl_call_with!();
 
+// The number of operations carried out by a benchmark may either be constant
+// or vary depending on the object's dimension
+trait NumOps {
+    fn num_ops(&self, dim: usize) -> usize;
+}
+//
+impl NumOps for usize {
+    fn num_ops(&self, _dim: usize) -> usize {
+        *self
+    }
+}
+//
+impl<F: Fn(usize) -> usize> NumOps for F {
+    fn num_ops(&self, dim: usize) -> usize {
+        (*self)(dim)
+    }
+}
+
 // TODO: Deduplicate these functions
 fn bench_output_bytes<Inputs: Clone, Output, M: Measurement>(
     group: &mut BenchmarkGroup<M>,
@@ -88,22 +106,8 @@ fn bench_ops<Inputs: Clone, Output, M: Measurement>(
     }
 }
 
-trait NumOps {
-    fn num_ops(&self, dim: usize) -> usize;
-}
-//
-impl NumOps for usize {
-    fn num_ops(&self, _dim: usize) -> usize {
-        *self
-    }
-}
-//
-impl<F: Fn(usize) -> usize> NumOps for F {
-    fn num_ops(&self, dim: usize) -> usize {
-        (*self)(dim)
-    }
-}
-
+// Execute a certain statement for a set of supported benchmark dimensions,
+// which are accessible to the statement as a constant called "DIM".
 macro_rules! for_each_dim {
     ($action:stmt) => {
         for_each_dim!([1, 2, 3, 4, 5, 6, 7, 8], $action)
@@ -118,6 +122,7 @@ macro_rules! for_each_dim {
     }
 }
 
+// Generate a set of Criterion benchmarks for Vector/SquareMatrix methods
 macro_rules! generate_benchmarks {
     (
         $(
@@ -130,7 +135,6 @@ macro_rules! generate_benchmarks {
                 fn [< $object:lower _ $method >](c: &mut Criterion) {
                     let mut group = c.benchmark_group(format!("{}::{}", stringify!($object), stringify!($method)));
                     for_each_dim!(
-                        #[allow(unused_parens)]
                         bench_output_bytes(
                             &mut group,
                             $object::<DIM>::$method,
@@ -139,7 +143,6 @@ macro_rules! generate_benchmarks {
                         )
                     );
                     for_each_dim!(
-                        #[allow(unused_parens)]
                         bench_input_bytes(
                             &mut group,
                             $object::<DIM>::$method,
@@ -148,7 +151,6 @@ macro_rules! generate_benchmarks {
                         )
                     );
                     for_each_dim!(
-                        #[allow(unused_parens)]
                         bench_ops(
                             &mut group,
                             $object::<DIM>::$method,
@@ -158,7 +160,6 @@ macro_rules! generate_benchmarks {
                         )
                     );
                     for_each_dim!(
-                        #[allow(unused_parens)]
                         bench_ops(
                             &mut group,
                             $object::<DIM>::$method,
@@ -167,6 +168,7 @@ macro_rules! generate_benchmarks {
                             NumOps::num_ops(&$num_adds, DIM)
                         )
                     );
+                    group.finish();
                 }
             )*
             criterion_group!(benches, $( [< $object:lower _ $method >] ),*);
@@ -175,24 +177,25 @@ macro_rules! generate_benchmarks {
     };
 }
 
+// Benchmark input generators
 fn coord_idx<const DIM: usize>() -> usize {
     rand::thread_rng().gen_range(0..DIM)
 }
-
+//
 fn mat_elems_iter<const DIM: usize>() -> impl Iterator<Item = Scalar> + Clone
 where
     [(); DIM * DIM]: ,
 {
     rand::thread_rng().gen::<[Scalar; DIM * DIM]>().into_iter()
 }
-
+//
 fn vector<const DIM: usize>() -> Vector<DIM>
 where
     [(); DIM * 1]: ,
 {
     rand::random()
 }
-
+//
 fn matrix<const DIM: usize>() -> SquareMatrix<DIM>
 where
     [(); DIM * DIM]: ,
@@ -200,22 +203,24 @@ where
     rand::random()
 }
 
+// Computational complexity calculations
 fn factorial(x: usize) -> usize {
     (2..x).product()
 }
-
+//
 fn det_muls(dim: usize) -> usize {
     factorial(dim)
 }
-
+//
 fn det_adds(dim: usize) -> usize {
     det_muls(dim) - 1
 }
-
+//
 fn num_mat_elems(dim: usize) -> usize {
     dim * dim
 }
 
+// Generate all the benchmarks
 // FIXME: Find a way to split this across multiple compilation units
 generate_benchmarks!(
     (Vector, unit, 0, 0, coord_idx),
