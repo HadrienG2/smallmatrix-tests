@@ -56,8 +56,8 @@ fn benchmark_impl<Inputs: Clone, Output, M: Measurement>(
 fn criterion_benchmark(c: &mut Criterion) {
     let mut rng = rand::thread_rng();
     for figure_of_merit in [
-        FigureOfMerit::InputBytes,
         FigureOfMerit::OutputBytes,
+        FigureOfMerit::InputBytes,
         FigureOfMerit::Muls,
         FigureOfMerit::Adds,
     ] {
@@ -127,11 +127,18 @@ fn criterion_benchmark(c: &mut Criterion) {
 
                     benchmark!(0, $dim - 1, SquareMatrix::<$dim>::trace, m1);
 
-                    // NOTE: Number of ops for det/inverse is strongly
-                    //       implementation-dependent, so better act as if we
-                    //       didn't know it.
-                    benchmark!(0, 0, SquareMatrix::<$dim>::det, m1);
-                    benchmark!(0, 0, SquareMatrix::<$dim>::inverse, m1);
+                    // FIXME: Should have implementation-specific det, inverse
+                    //        methods, so we can keep number of add/mul accurate
+                    let dim_min_1_fact = (2..$dim).product::<usize>();
+                    let dim_fact = dim_min_1_fact * $dim;
+                    benchmark!(dim_fact, dim_fact - 1, SquareMatrix::<$dim>::det, m1);
+                    let num_mat_elems = $dim * $dim;
+                    benchmark!(
+                        dim_fact + num_mat_elems * dim_min_1_fact,
+                        dim_fact - 1 + num_mat_elems * (dim_min_1_fact - 1),
+                        SquareMatrix::<$dim>::inverse,
+                        m1
+                    );
 
                     // TODO: Add more ops, those that go by traits
                 )*
