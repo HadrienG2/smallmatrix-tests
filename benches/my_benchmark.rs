@@ -46,6 +46,8 @@ fn benchmark_impl<Inputs: Clone, Output, M: Measurement>(
         }
         FigureOfMerit::Adds => {
             if num_adds == 0 {
+                return;
+            } else {
                 group.throughput(Throughput::Elements(num_adds as _));
             }
         }
