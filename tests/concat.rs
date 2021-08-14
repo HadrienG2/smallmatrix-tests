@@ -7,7 +7,7 @@
 
 use paste::paste;
 use quickcheck_macros::quickcheck;
-use simd_tests::{Matrix, Vector};
+use smallmatrix_tests::{Matrix, Vector};
 
 fn test_cat<const LEFT_DIM: usize, const RIGHT_DIM: usize>(
     lhs: Vector<LEFT_DIM>,

@@ -12,7 +12,7 @@ use self::common::{assert_close_matrix, assert_close_scalar, assert_panics};
 use paste::paste;
 use quickcheck::TestResult;
 use quickcheck_macros::quickcheck;
-use simd_tests::{ColVector, ConstCheck, Matrix, Scalar, SquareMatrix, True};
+use smallmatrix_tests::{ColVector, ConstCheck, Matrix, Scalar, SquareMatrix, True};
 
 fn test_minor<const DIM: usize>(mat: SquareMatrix<DIM>, row: usize, col: usize)
 where

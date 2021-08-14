@@ -11,7 +11,7 @@ use num_traits::One;
 use paste::paste;
 use quickcheck::TestResult;
 use quickcheck_macros::quickcheck;
-use simd_tests::{Matrix, SquareMatrix};
+use smallmatrix_tests::{Matrix, SquareMatrix};
 
 fn test_matmul<const LEFT_ROWS: usize, const LEFT_COLS: usize, const RIGHT_COLS: usize>(
     lhs: Matrix<LEFT_ROWS, LEFT_COLS>,

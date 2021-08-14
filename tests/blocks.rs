@@ -9,7 +9,7 @@ mod common;
 use self::common::*;
 use paste::paste;
 use quickcheck_macros::quickcheck;
-use simd_tests::{Matrix, Vector};
+use smallmatrix_tests::{Matrix, Vector};
 use std::panic::UnwindSafe;
 
 // Signature of op asserts that return type is right

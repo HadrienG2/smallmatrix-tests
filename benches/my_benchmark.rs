@@ -6,7 +6,7 @@ use criterion::{
 };
 use paste::paste;
 use rand::prelude::*;
-use simd_tests::{Scalar, SquareMatrix, Vector};
+use smallmatrix_tests::{Scalar, SquareMatrix, Vector};
 
 // Enable calling a function with a tuple of arguments
 trait CallWith<Tuple, Result> {

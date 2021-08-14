@@ -1,5 +1,5 @@
 use more_asserts::*;
-use simd_tests::{Matrix, Scalar};
+use smallmatrix_tests::{Matrix, Scalar};
 use std::panic::UnwindSafe;
 
 /// Assert that a certain functor panics

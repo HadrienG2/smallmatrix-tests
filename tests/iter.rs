@@ -7,7 +7,7 @@ mod common;
 use self::common::*;
 use paste::paste;
 use quickcheck_macros::quickcheck;
-use simd_tests::{Matrix, Scalar};
+use smallmatrix_tests::{Matrix, Scalar};
 
 fn test_from_col_major_elems<const ROWS: usize, const COLS: usize>(elems: Vec<Scalar>) {
     if elems.len() == ROWS * COLS {

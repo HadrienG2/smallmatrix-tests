@@ -8,7 +8,7 @@ use self::common::*;
 use num_traits::Zero;
 use paste::paste;
 use quickcheck_macros::quickcheck;
-use simd_tests::{Matrix, Scalar};
+use smallmatrix_tests::{Matrix, Scalar};
 
 fn test_partial_eq<const ROWS: usize, const COLS: usize>(
     mat1: Matrix<ROWS, COLS>,

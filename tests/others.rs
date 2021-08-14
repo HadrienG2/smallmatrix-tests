@@ -7,7 +7,7 @@ use num_traits::{One, Zero};
 use paste::paste;
 use quickcheck::TestResult;
 use quickcheck_macros::quickcheck;
-use simd_tests::{Matrix, Scalar, SquareMatrix, Vector, X, Y, Z};
+use smallmatrix_tests::{Matrix, Scalar, SquareMatrix, Vector, X, Y, Z};
 
 fn test_clone<const ROWS: usize, const COLS: usize>(mat: Matrix<ROWS, COLS>) {
     let expected = Matrix::<ROWS, COLS>::from_col_major_elems(mat.into_col_major_elems());
